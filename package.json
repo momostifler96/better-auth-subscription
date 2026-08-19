@@ -1,0 +1,30 @@
+{
+  "name": "better-subscriptions",
+  "version": "0.1.0",
+  "description": "Plugin d'abonnement avancé pour Better Auth : plans, provider de paiement pluggable, codes promo, souscriptions personnalisées à la demande, plans partenaires, avantages personnalisés, dépassements autorisés et journal d'audit.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "demo": "tsx scripts/demo.ts"
+  },
+  "peerDependencies": {
+    "better-auth": "^1.2.0"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "vue": "^3.5.41",
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "better-auth": "^1.2.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
