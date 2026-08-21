@@ -267,8 +267,9 @@ class MemoryAuditLogRepository implements AuditLogRepository {
     return this.rows.filter((r) => {
       if (filter.action && r.action !== filter.action) return false;
       if (filter.entityType && r.entityType !== filter.entityType) return false;
-      if (filter.from && r.createdAt < filter.from) return false;
-      if (filter.to && r.createdAt > filter.to) return false;
+      const createdDate = new Date(r.createdAt);
+      if (filter.from && createdDate < filter.from) return false;
+      if (filter.to && createdDate > filter.to) return false;
       return true;
     });
   }
