@@ -66,7 +66,8 @@ class AdapterAdvantageRepository implements AdvantageRepository {
   constructor(private adapter: BetterAuthAdapter) {}
 
   async create(a: Advantage): Promise<Advantage> {
-    const data = serialize("advantage", { ...a, createdAt: new Date() });
+    const { id, ...rest } = { ...a, createdAt: new Date() };
+    const data = serialize("advantage", rest);
     const result = await this.adapter.create<Advantage>({ model: "advantage", data });
     return deserialize("advantage", result);
   }
@@ -111,7 +112,8 @@ class AdapterPartnerRepository implements PartnerRepository {
   constructor(private adapter: BetterAuthAdapter) {}
 
   async create(p: Partner): Promise<Partner> {
-    const data = serialize("partner", { ...p, createdAt: new Date() });
+    const { id, ...rest } = { ...p, createdAt: new Date() };
+    const data = serialize("partner", rest);
     const result = await this.adapter.create<Partner>({ model: "partner", data });
     return deserialize("partner", result);
   }
@@ -154,7 +156,8 @@ class AdapterPlanRepository implements PlanRepository {
   constructor(private adapter: BetterAuthAdapter) {}
 
   async create(p: Plan): Promise<Plan> {
-    const data = serialize("plan", { ...p, createdAt: new Date(), updatedAt: new Date() });
+    const { id, ...rest } = { ...p, createdAt: new Date(), updatedAt: new Date() };
+    const data = serialize("plan", rest);
     const result = await this.adapter.create<Plan>({ model: "plan", data });
     return deserialize("plan", result);
   }
@@ -228,7 +231,8 @@ class AdapterSubscriptionRepository implements SubscriptionRepository {
   constructor(private adapter: BetterAuthAdapter) {}
 
   async create(sub: Subscription): Promise<Subscription> {
-    const data = serialize("subscription", { ...sub, createdAt: new Date(), updatedAt: new Date() });
+    const { id, ...rest } = { ...sub, createdAt: new Date(), updatedAt: new Date() };
+    const data = serialize("subscription", rest);
     const result = await this.adapter.create<Subscription>({ model: "subscription", data });
     return deserialize("subscription", result);
   }
@@ -280,7 +284,8 @@ class AdapterCustomSubscriptionRequestRepository implements CustomSubscriptionRe
   constructor(private adapter: BetterAuthAdapter) {}
 
   async create(req: CustomSubscriptionRequest): Promise<CustomSubscriptionRequest> {
-    const data = serialize("customSubscriptionRequest", { ...req, createdAt: new Date(), updatedAt: new Date() });
+    const { id, ...rest } = { ...req, createdAt: new Date(), updatedAt: new Date() };
+    const data = serialize("customSubscriptionRequest", rest);
     const result = await this.adapter.create<CustomSubscriptionRequest>({ model: "customSubscriptionRequest", data });
     return deserialize("customSubscriptionRequest", result);
   }
@@ -316,7 +321,8 @@ class AdapterPromoCodeRepository implements PromoCodeRepository {
   constructor(private adapter: BetterAuthAdapter) {}
 
   async create(promo: PromoCode): Promise<PromoCode> {
-    const data = serialize("promoCode", { ...promo, createdAt: new Date() });
+    const { id, ...rest } = { ...promo, createdAt: new Date() };
+    const data = serialize("promoCode", rest);
     const result = await this.adapter.create<PromoCode>({ model: "promoCode", data });
     return deserialize("promoCode", result);
   }
@@ -355,7 +361,8 @@ class AdapterPromoCodeRepository implements PromoCodeRepository {
   }
 
   async addRedemption(redemption: PromoRedemption): Promise<PromoRedemption> {
-    const data = serialize("promoRedemption", { ...redemption, redeemedAt: new Date() });
+    const { id, ...rest } = { ...redemption, redeemedAt: new Date() };
+    const data = serialize("promoRedemption", rest);
     const result = await this.adapter.create<PromoRedemption>({ model: "promoRedemption", data });
     return deserialize("promoRedemption", result);
   }
@@ -372,7 +379,8 @@ class AdapterUsageRepository implements UsageRepository {
   constructor(private adapter: BetterAuthAdapter) {}
 
   async record(usage: UsageRecord): Promise<UsageRecord> {
-    const data = serialize("usageRecord", { ...usage, recordedAt: new Date() });
+    const { id, ...rest } = { ...usage, recordedAt: new Date() };
+    const data = serialize("usageRecord", rest);
     const result = await this.adapter.create<UsageRecord>({ model: "usageRecord", data });
     return deserialize("usageRecord", result);
   }
@@ -394,7 +402,8 @@ class AdapterOverageAuthorizationRepository implements OverageAuthorizationRepos
   constructor(private adapter: BetterAuthAdapter) {}
 
   async create(auth: OverageAuthorization): Promise<OverageAuthorization> {
-    const data = serialize("overageAuthorization", { ...auth, createdAt: new Date() });
+    const { id, ...rest } = { ...auth, createdAt: new Date() };
+    const data = serialize("overageAuthorization", rest);
     const result = await this.adapter.create<OverageAuthorization>({ model: "overageAuthorization", data });
     return deserialize("overageAuthorization", result);
   }
@@ -436,7 +445,8 @@ class AdapterAuditLogRepository implements AuditLogRepository {
   constructor(private adapter: BetterAuthAdapter) {}
 
   async append(entry: AuditLogEntry): Promise<AuditLogEntry> {
-    const data = serialize("subscriptionAudit", { ...entry, createdAt: new Date().toISOString() });
+    const { id, ...rest } = entry;
+    const data = serialize("subscriptionAudit", { ...rest, createdAt: new Date().toISOString() });
     const result = await this.adapter.create<AuditLogEntry>({ model: "subscriptionAudit", data });
     return deserialize("subscriptionAudit", result);
   }
