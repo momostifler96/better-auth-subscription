@@ -1,5 +1,6 @@
 import type { SubscriptionStore } from "../repositories/interfaces.js";
 import { createMemoryStore } from "../repositories/memory/store.js";
+import { createAdapterStore } from "../repositories/adapter/adapter-store.js";
 import type { PaymentProviderRegistry } from "../providers/registry.js";
 import { AuditService } from "../services/audit-service.js";
 import { PlanService } from "../services/plan-service.js";
@@ -44,5 +45,23 @@ export function createSubscriptionServices(options: SubscriptionsPluginOptions):
   const partners = new PartnerService(store, audit, plans);
   const subscriptions = new SubscriptionService(store, audit, options.providers, plans, promos);
   const overage = new OverageService(store, audit, plans, options.providers);
+  return { store, audit, plans, promos, partners, subscriptions, overage };
+}
+
+/**
+ * Crée les services avec l'adaptateur Better Auth pour la requête actuelle.
+ * Utilise le schema du plugin pour accéder à la base de données du projet.
+ */
+export function createSubscriptionServicesWithAdapter(
+  adapter: any,
+  providers: PaymentProviderRegistry
+): SubscriptionServices {
+  const store = createAdapterStore(adapter);
+  const audit = new AuditService(store.auditLogs);
+  const plans = new PlanService(store, audit);
+  const promos = new PromoService(store, audit);
+  const partners = new PartnerService(store, audit, plans);
+  const subscriptions = new SubscriptionService(store, audit, providers, plans, promos);
+  const overage = new OverageService(store, audit, plans, providers);
   return { store, audit, plans, promos, partners, subscriptions, overage };
 }

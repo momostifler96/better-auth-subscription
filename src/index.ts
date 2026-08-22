@@ -3,7 +3,7 @@ export * from "./types/domain.js";
 
 // Ports de persistance + implémentation mémoire (dev/tests)
 export * from "./repositories/interfaces.js";
-export { createMemoryStore, newId } from "./repositories/memory/store.js";
+export { createMemoryStore } from "./repositories/memory/store.js";
 
 // Schéma Drizzle de référence (Postgres)
 export * as drizzleSchema from "./schema/drizzle.js";

@@ -1,8 +1,8 @@
-import { newId } from "../repositories/memory/store.js";
 import type { SubscriptionStore } from "../repositories/interfaces.js";
 import type { Partner, PartnerBillingMode, Plan, PlanPrice } from "../types/domain.js";
 import type { AuditContext, AuditService } from "./audit-service.js";
 import type { PlanService } from "./plan-service.js";
+import { NotFoundError, AlreadyExistsError, BadRequestError } from "../errors.js";
 
 export interface CreatePartnerInput {
   name: string;
@@ -32,14 +32,13 @@ export class PartnerService {
 
   async createPartner(ctx: AuditContext, input: CreatePartnerInput): Promise<Partner> {
     const existing = await this.store.partners.findBySlug(input.slug);
-    if (existing) throw new Error(`Un partenaire avec le slug "${input.slug}" existe déjà`);
+    if (existing) throw new AlreadyExistsError("Partner", "slug", input.slug);
     if (input.billingMode === "free" && input.revenueSharePercent) {
-      throw new Error('Un partage de revenu n\'a pas de sens pour un partenaire en mode "free"');
+      throw new BadRequestError('Un partage de revenu n\'a pas de sens pour un partenaire en mode "free"');
     }
 
     return this.audit.wrap(ctx, { action: "partner.create", entityType: "partner", entityId: input.slug }, async () => {
-      const partner: Partner = {
-        id: newId("partner"),
+      const partner: Omit<Partner, "id"> = {
         name: input.name,
         slug: input.slug,
         billingMode: input.billingMode,
@@ -56,7 +55,7 @@ export class PartnerService {
 
   async updatePartner(ctx: AuditContext, partnerId: string, patch: Partial<Pick<Partner, "discountPercent" | "revenueSharePercent" | "isActive" | "notes">>): Promise<Partner> {
     const before = await this.store.partners.findById(partnerId);
-    if (!before) throw new Error(`Partenaire ${partnerId} introuvable`);
+    if (!before) throw new NotFoundError("Partner", partnerId);
     return this.audit.wrap(ctx, { action: "partner.update", entityType: "partner", entityId: partnerId, before }, () =>
       this.store.partners.update(partnerId, patch),
     );
@@ -78,7 +77,7 @@ export class PartnerService {
    */
   async createPartnerPlan(ctx: AuditContext, partnerId: string, input: CreatePartnerPlanInput): Promise<Plan> {
     const partner = await this.store.partners.findById(partnerId);
-    if (!partner) throw new Error(`Partenaire ${partnerId} introuvable`);
+    if (!partner) throw new NotFoundError("Partner", partnerId);
 
     return this.plans.createPlan(ctx, {
       slug: input.slug,

@@ -2,8 +2,23 @@ import { createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import type { BetterAuthPlugin } from "better-auth/types";
 import * as z from "zod/v4";
 import type { AuditContext } from "../services/audit-service.js";
-import { createSubscriptionServices, type SubscriptionServices, type SubscriptionsPluginOptions } from "./services.js";
+import { createSubscriptionServices, createSubscriptionServicesWithAdapter, type SubscriptionServices, type SubscriptionsPluginOptions } from "./services.js";
+import { isAppError, type ErrorCode } from "../errors.js";
 const unRepresentableOption = {unrepresentable: "any" as const}
+
+function handleServiceError(ctx: any, error: unknown): never {
+  if (isAppError(error)) {
+    throw ctx.error(error.code as ErrorCode, {
+      message: error.message,
+      ...(error.details && { details: error.details })
+    });
+  }
+  throw error;
+}
+
+function getAdapterServices(ctx: any, providers: any): SubscriptionServices {
+  return createSubscriptionServicesWithAdapter(ctx.context.adapter, providers);
+}
 import {
     advantageSchema,
     authorizeOverageBodySchema,
@@ -33,7 +48,7 @@ import {
 } from "./schemas.js";
 
 export type { SubscriptionServices, SubscriptionsPluginOptions } from "./services.js";
-export { createSubscriptionServices } from "./services.js";
+export { createSubscriptionServices, createSubscriptionServicesWithAdapter } from "./services.js";
 type SessionUser = Record<string, unknown> & { id: string };
 
 function toAuditContext(user: SessionUser, isAdmin: (u: SessionUser) => boolean, headers: {
@@ -42,7 +57,7 @@ function toAuditContext(user: SessionUser, isAdmin: (u: SessionUser) => boolean,
     return {
         actorId: user.id,
         actorType: isAdmin(user) ? "admin" : "user",
-        ip: headers.getHeader("x-forwarded-for") ?? headers.getHeader("cf-connecting-ip") ?? undefined,
+        ip: headers.getHeader("x-forwarded-for") ?? headers.getHeader("cf-connecting-ip") ?? '0.0.0.0',
         userAgent: headers.getHeader("user-agent") ?? undefined,
     };
 }
@@ -103,7 +118,8 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             },
         } as any,
         async (ctx) => {
-            const plans = await services.plans.listPlans({ isPublic: true });
+            const svc = getAdapterServices(ctx, options.providers);
+            const plans = await svc.plans.listPlans({ isPublic: true });
             return ctx.json({ plans });
         },
     );
@@ -113,7 +129,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         {
             method: "POST",
             body: createAdvantageBodySchema,
-            response: z.object({ advantage: advantageSchema }),
+            // response: z.object({ advantage: advantageSchema }),
             use: [sessionMiddleware],
             metadata: {
                 openapi: {
@@ -141,8 +157,14 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
-            const advantage = await services.plans.createAdvantage(toAuditContext(user, isAdmin, ctx), ctx.body);
-            return ctx.json({ advantage });
+            try {
+                const svc = getAdapterServices(ctx, options.providers);
+                const advantage = await svc.plans.createAdvantage(toAuditContext(user, isAdmin, ctx), ctx.body);
+                return ctx.json({ advantage });
+            } catch (error) {
+               throw ctx.context.logger.error('create advantage error',error);
+                handleServiceError(ctx, error);
+            }
         },
     );
     const updateAdvantage = createAuthEndpoint(
@@ -184,8 +206,13 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             const key = ctx.params.key;
             if (!key) throw ctx.error("BAD_REQUEST", { message: "Clé d'avantage requise" });
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
-            const advantage = await services.plans.updateAdvantage(toAuditContext(user, isAdmin, ctx), key, ctx.body);
-            return ctx.json({ advantage });
+            try {
+                const svc = getAdapterServices(ctx, options.providers);
+                const advantage = await svc.plans.updateAdvantage(toAuditContext(user, isAdmin, ctx), key, ctx.body);
+                return ctx.json({ advantage });
+            } catch (error) {
+                handleServiceError(ctx, error);
+            }
         },
     );
     const listAdvantages = createAuthEndpoint(
@@ -213,7 +240,8 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
-            const advantages = await services.plans.listAdvantages();
+            const svc = getAdapterServices(ctx, options.providers);
+            const advantages = await svc.plans.listAdvantages();
             return ctx.json({ advantages });
         },
     );
@@ -252,8 +280,13 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
-            const plan = await services.plans.createPlan(toAuditContext(user, isAdmin, ctx), ctx.body);
-            return ctx.json({ plan });
+            try {
+                const svc = getAdapterServices(ctx, options.providers);
+                const plan = await svc.plans.createPlan(toAuditContext(user, isAdmin, ctx), ctx.body);
+                return ctx.json({ plan });
+            } catch (error) {
+                handleServiceError(ctx, error);
+            }
         },
     );
     const updatePlan = createAuthEndpoint(
@@ -294,8 +327,13 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             const slug = ctx.params.slug;
             if (!slug) throw ctx.error("BAD_REQUEST", { message: "Slug de plan requis" });
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
-            const plan = await services.plans.updatePlanBySlug(toAuditContext(user, isAdmin, ctx), slug, ctx.body);
-            return ctx.json({ plan });
+            try {
+                const svc = getAdapterServices(ctx, options.providers);
+                const plan = await svc.plans.updatePlanBySlug(toAuditContext(user, isAdmin, ctx), slug, ctx.body);
+                return ctx.json({ plan });
+            } catch (error) {
+                handleServiceError(ctx, error);
+            }
         },
     );
 
@@ -325,9 +363,10 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         } as any,
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
-            const subscription = await services.subscriptions.getActiveForUser(user.id);
+            const svc = getAdapterServices(ctx, options.providers);
+            const subscription = await svc.subscriptions.getActiveForUser(user.id);
             if (!subscription) return ctx.json({ subscription: null, advantages: [] });
-            const advantages = await services.plans.getEffectiveAdvantages(subscription);
+            const advantages = await svc.plans.getEffectiveAdvantages(subscription);
             return ctx.json({ subscription, advantages });
         },
     );
@@ -364,15 +403,28 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         } as any,
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
-            const subscription = await services.subscriptions.subscribe(toAuditContext(user, isAdmin, ctx), {
-                userId: user.id,
-                email: (user.email as string | undefined) ?? undefined,
-                planId: ctx.body.planId,
-                provider: ctx.body.provider,
-                promoCode: ctx.body.promoCode,
-                quantity: ctx.body.quantity,
-            });
-            return ctx.json({ subscription });
+            const provider = ctx.body.provider || "manual";
+
+            if (provider === "manual" && !ctx.body.manualProofUrl) {
+                throw ctx.error("BAD_REQUEST", { message: "Proof of payment (manualProofUrl) is required for manual provider" });
+            }
+
+            try {
+                const svc = getAdapterServices(ctx, options.providers);
+                const subscription = await svc.subscriptions.subscribe(toAuditContext(user, isAdmin, ctx), {
+                    userId: user.id,
+                    email: (user.email as string | undefined) ?? undefined,
+                    planId: ctx.body.planId,
+                    provider,
+                    promoCode: ctx.body.promoCode,
+                    quantity: ctx.body.quantity,
+                    manualProofUrl: ctx.body.manualProofUrl,
+                    manualMetadata: ctx.body.manualMetadata,
+                });
+                return ctx.json({ subscription });
+            } catch (error) {
+                handleServiceError(ctx, error);
+            }
         },
     );
 
@@ -408,11 +460,16 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         } as any,
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
-            const existing = await services.subscriptions.getSubscription(ctx.body.subscriptionId);
+            const svc = getAdapterServices(ctx, options.providers);
+            const existing = await svc.subscriptions.getSubscription(ctx.body.subscriptionId);
             if (!existing) throw ctx.error("NOT_FOUND", { message: "Souscription introuvable" });
             if (existing.userId !== user.id && !isAdmin(user)) throw ctx.error("FORBIDDEN");
-            const subscription = await services.subscriptions.changePlan(toAuditContext(user, isAdmin, ctx), ctx.body.subscriptionId, ctx.body.newPlanId);
-            return ctx.json({ subscription });
+            try {
+                const subscription = await svc.subscriptions.changePlan(toAuditContext(user, isAdmin, ctx), ctx.body.subscriptionId, ctx.body.newPlanId);
+                return ctx.json({ subscription });
+            } catch (error) {
+                handleServiceError(ctx, error);
+            }
         },
     );
 
@@ -448,13 +505,18 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         } as any,
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
-            const existing = await services.subscriptions.getSubscription(ctx.body.subscriptionId);
+            const svc = getAdapterServices(ctx, options.providers);
+            const existing = await svc.subscriptions.getSubscription(ctx.body.subscriptionId);
             if (!existing) throw ctx.error("NOT_FOUND", { message: "Souscription introuvable" });
             if (existing.userId !== user.id && !isAdmin(user)) throw ctx.error("FORBIDDEN");
-            const subscription = await services.subscriptions.cancel(toAuditContext(user, isAdmin, ctx), ctx.body.subscriptionId, {
-                atPeriodEnd: ctx.body.atPeriodEnd,
-            });
-            return ctx.json({ subscription });
+            try {
+                const subscription = await svc.subscriptions.cancel(toAuditContext(user, isAdmin, ctx), ctx.body.subscriptionId, {
+                    atPeriodEnd: ctx.body.atPeriodEnd,
+                });
+                return ctx.json({ subscription });
+            } catch (error) {
+                handleServiceError(ctx, error);
+            }
         },
     );
 
@@ -492,11 +554,16 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         } as any,
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
-            const request = await services.subscriptions.requestCustomSubscription(toAuditContext(user, isAdmin, ctx), {
-                requestedByUserId: user.id,
-                ...ctx.body,
-            });
-            return ctx.json({ request });
+            try {
+                const svc = getAdapterServices(ctx, options.providers);
+                const request = await svc.subscriptions.requestCustomSubscription(toAuditContext(user, isAdmin, ctx), {
+                    requestedByUserId: user.id,
+                    ...ctx.body,
+                });
+                return ctx.json({ request });
+            } catch (error) {
+                handleServiceError(ctx, error);
+            }
         },
     );
 
@@ -525,7 +592,8 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
-            const requests = await services.subscriptions.listPendingCustomRequests();
+            const svc = getAdapterServices(ctx, options.providers);
+            const requests = await svc.subscriptions.listPendingCustomRequests();
             return ctx.json({ requests });
         },
     );
@@ -580,13 +648,18 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
-            const subscription = await services.subscriptions.approveCustomRequest(toAuditContext(user, isAdmin, ctx), ctx.params.id, {
-                reviewedByUserId: user.id,
-                reviewNotes: ctx.body?.reviewNotes,
-                planSlug: ctx.body?.planSlug,
-                price: ctx.body?.price,
-            });
-            return ctx.json({ subscription });
+            try {
+                const svc = getAdapterServices(ctx, options.providers);
+                const subscription = await svc.subscriptions.approveCustomRequest(toAuditContext(user, isAdmin, ctx), ctx.params.id, {
+                    reviewedByUserId: user.id,
+                    reviewNotes: ctx.body?.reviewNotes,
+                    planSlug: ctx.body?.planSlug,
+                    price: ctx.body?.price,
+                });
+                return ctx.json({ subscription });
+            } catch (error) {
+                handleServiceError(ctx, error);
+            }
         },
     );
 
@@ -626,11 +699,16 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
-            const request = await services.subscriptions.rejectCustomRequest(toAuditContext(user, isAdmin, ctx), ctx.params.id, {
-                reviewedByUserId: user.id,
-                reviewNotes: ctx.body?.reviewNotes,
-            });
-            return ctx.json({ request });
+            try {
+                const svc = getAdapterServices(ctx, options.providers);
+                const request = await svc.subscriptions.rejectCustomRequest(toAuditContext(user, isAdmin, ctx), ctx.params.id, {
+                    reviewedByUserId: user.id,
+                    reviewNotes: ctx.body?.reviewNotes,
+                });
+                return ctx.json({ request });
+            } catch (error) {
+                handleServiceError(ctx, error);
+            }
         },
     );
 
@@ -669,8 +747,13 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
-            const promo = await services.promos.createPromoCode(toAuditContext(user, isAdmin, ctx), ctx.body);
-            return ctx.json({ promo });
+            try {
+                const svc = getAdapterServices(ctx, options.providers);
+                const promo = await svc.promos.createPromoCode(toAuditContext(user, isAdmin, ctx), ctx.body);
+                return ctx.json({ promo });
+            } catch (error) {
+                handleServiceError(ctx, error);
+            }
         },
     );
 
@@ -706,12 +789,17 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         } as any,
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
-            const result = await services.promos.validate(ctx.body.code, {
-                userId: user.id,
-                planId: ctx.body.planId,
-                partnerId: ctx.body.partnerId,
-            });
-            return ctx.json({ promo: result.promo });
+            try {
+                const svc = getAdapterServices(ctx, options.providers);
+                const result = await svc.promos.validate(ctx.body.code, {
+                    userId: user.id,
+                    planId: ctx.body.planId,
+                    partnerId: ctx.body.partnerId,
+                });
+                return ctx.json({ promo: result.promo });
+            } catch (error) {
+                handleServiceError(ctx, error);
+            }
         },
     );
 
@@ -750,8 +838,13 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
-            const partner = await services.partners.createPartner(toAuditContext(user, isAdmin, ctx), ctx.body);
-            return ctx.json({ partner });
+            try {
+                const svc = getAdapterServices(ctx, options.providers);
+                const partner = await svc.partners.createPartner(toAuditContext(user, isAdmin, ctx), ctx.body);
+                return ctx.json({ partner });
+            } catch (error) {
+                handleServiceError(ctx, error);
+            }
         },
     );
 
@@ -792,8 +885,13 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
-            const plan = await services.partners.createPartnerPlan(toAuditContext(user, isAdmin, ctx), ctx.params.id, ctx.body);
-            return ctx.json({ plan });
+            try {
+                const svc = getAdapterServices(ctx, options.providers);
+                const plan = await svc.partners.createPartnerPlan(toAuditContext(user, isAdmin, ctx), ctx.params.id, ctx.body);
+                return ctx.json({ plan });
+            } catch (error) {
+                handleServiceError(ctx, error);
+            }
         },
     );
 
@@ -831,11 +929,16 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         } as any,
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
-            const subscription = await services.subscriptions.getSubscription(ctx.body.subscriptionId);
+            const svc = getAdapterServices(ctx, options.providers);
+            const subscription = await svc.subscriptions.getSubscription(ctx.body.subscriptionId);
             if (!subscription) throw ctx.error("NOT_FOUND", { message: "Souscription introuvable" });
             if (subscription.userId !== user.id && !isAdmin(user)) throw ctx.error("FORBIDDEN");
-            const result = await services.overage.recordUsage(toAuditContext(user, isAdmin, ctx), ctx.body);
-            return ctx.json(result);
+            try {
+                const result = await svc.overage.recordUsage(toAuditContext(user, isAdmin, ctx), ctx.body);
+                return ctx.json(result);
+            } catch (error) {
+                handleServiceError(ctx, error);
+            }
         },
     );
 
@@ -872,8 +975,13 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
-            const authorization = await services.overage.authorizeOverage(toAuditContext(user, isAdmin, ctx), ctx.body);
-            return ctx.json({ authorization });
+            try {
+                const svc = getAdapterServices(ctx, options.providers);
+                const authorization = await svc.overage.authorizeOverage(toAuditContext(user, isAdmin, ctx), ctx.body);
+                return ctx.json({ authorization });
+            } catch (error) {
+                handleServiceError(ctx, error);
+            }
         },
     );
 
@@ -908,7 +1016,8 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
-            const logs = await services.audit.query({ action: ctx.query?.action, entityType: ctx.query?.entityType });
+            const svc = getAdapterServices(ctx, options.providers);
+            const logs = await svc.audit.query({ action: ctx.query?.action, entityType: ctx.query?.entityType });
             return ctx.json({ logs });
         },
     );
@@ -922,10 +1031,11 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             const rawBody = await ctx.request.text();
             const headers = Object.fromEntries(ctx.headers.entries());
             try {
-                const event = await services.subscriptions.handleProviderWebhook(ctx.params.provider, rawBody, headers);
+                const svc = getAdapterServices(ctx, options.providers);
+                const event = await svc.subscriptions.handleProviderWebhook(ctx.params.provider, rawBody, headers);
                 return ctx.json({ received: true, type: event.type });
             } catch (error) {
-                throw ctx.error("BAD_REQUEST", { message: error instanceof Error ? error.message : "Webhook invalide" });
+                handleServiceError(ctx, error);
             }
         },
     );
@@ -1227,7 +1337,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
                 { fields: ["authorizedByUserId"] },
             ],
         },
-        auditLog: {
+        subscriptionAudit: {
             fields: {
                 actorId: {
                     type: "string",
@@ -1239,10 +1349,10 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
                 action: { type: "string", required: true },
                 entityType: { type: "string", required: true, fieldName: "entity_type" },
                 entityId: { type: "string", required: true, fieldName: "entity_id" },
-                before: { type: "string" },
-                after: { type: "string" },
-                metadata: { type: "string" },
-                ip: { type: "string" },
+                before: { type: "string", nullable: true },
+                after: { type: "string", nullable: true },
+                metadata: { type: "string", nullable: true },
+                ip: { type: "string",default:"0.0.0.0" },
                 userAgent: { type: "string", fieldName: "user_agent" },
                 createdAt: { type: "date", required: true, fieldName: "created_at" },
             },

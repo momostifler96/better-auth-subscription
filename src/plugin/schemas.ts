@@ -229,9 +229,12 @@ export const updatePlanBodySchema = z.object({
 
 export const subscribeBodySchema = z.object({
   planId: z.string().describe("Plan ID to subscribe to"),
-  provider: z.string().optional().describe("Payment provider (e.g., 'stripe')"),
+  provider: z.string().optional().describe("Payment provider (e.g., 'stripe', 'manual')"),
   promoCode: z.string().optional().describe("Promo code to apply"),
   quantity: z.number().int().positive().optional().describe("Quantity multiplier for the plan"),
+  // Manual provider only: proof of payment (file as base64 or URL) and optional metadata
+  manualProofUrl: z.string().optional().describe("Proof of payment (base64 data URL or external URL) - required for 'manual' provider"),
+  manualMetadata: z.record(z.string(), z.any()).optional().describe("Optional metadata for manual subscription (developer configurable)"),
 });
 
 export const changePlanBodySchema = z.object({

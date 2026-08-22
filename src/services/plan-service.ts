@@ -1,7 +1,7 @@
-import { newId } from "../repositories/memory/store.js";
 import type { SubscriptionStore } from "../repositories/interfaces.js";
 import type { Advantage, Plan, PlanAdvantage, PlanKind, PlanPrice, Subscription } from "../types/domain.js";
 import type { AuditContext, AuditService } from "./audit-service.js";
+import { AlreadyExistsError, NotFoundError, ValidationError } from "../errors.js";
 
 export interface CreateAdvantageInput {
   key: string;
@@ -41,10 +41,10 @@ export class PlanService {
 
   async createAdvantage(ctx: AuditContext, input: CreateAdvantageInput): Promise<Advantage> {
     const existing = await this.store.advantages.findByKey(input.key);
-    if (existing) throw new Error(`Un avantage avec la clé "${input.key}" existe déjà`);
+    if (existing) throw new AlreadyExistsError("Advantage", "key", input.key);
+
     return this.audit.wrap(ctx, { action: "advantage.create", entityType: "advantage", entityId: input.key }, async () => {
-      const advantage: Advantage = {
-        id: newId("adv"),
+      const advantage: Omit<Advantage, "id"> = {
         key: input.key,
         name: input.name,
         description: input.description,
@@ -57,7 +57,7 @@ export class PlanService {
   }
   async  updateAdvantage(ctx: AuditContext, key: string, patch: Partial<Pick<Advantage, "name" | "description" | "valueType" | "unit">>): Promise<Advantage> {
     const before = await this.store.advantages.findByKey(key);
-    if (!before) throw new Error(`Avantage ${key} introuvable`);
+    if (!before) throw new NotFoundError("Advantage", key);
     return this.audit.wrap(ctx, { action: "advantage.update", entityType: "advantage", entityId: key, before }, () =>
       this.store.advantages.update(key, patch),
     );
@@ -71,12 +71,11 @@ export class PlanService {
 
   async createPlan(ctx: AuditContext, input: CreatePlanInput): Promise<Plan> {
     const existing = await this.store.plans.findBySlug(input.slug);
-    if (existing) throw new Error(`Un plan avec le slug "${input.slug}" existe déjà`);
+    if (existing) throw new AlreadyExistsError("Plan", "slug", input.slug);
 
     return this.audit.wrap(ctx, { action: "plan.create", entityType: "plan", entityId: input.slug }, async () => {
       const now = new Date();
-      const plan: Plan = {
-        id: newId("plan"),
+      const plan: Omit<Plan, "id"> = {
         slug: input.slug,
         name: input.name,
         description: input.description,
@@ -89,6 +88,7 @@ export class PlanService {
         createdAt: now,
         updatedAt: now,
       };
+
       const created = await this.store.plans.create(plan);
 
       if (input.advantages?.length) {
@@ -100,14 +100,14 @@ export class PlanService {
 
   async updatePlan(ctx: AuditContext, planId: string, patch: Partial<Pick<Plan, "name" | "description" | "isActive" | "isPublic" | "prices">>): Promise<Plan> {
     const before = await this.store.plans.findById(planId);
-    if (!before) throw new Error(`Plan ${planId} introuvable`);
+    if (!before) throw new NotFoundError("Plan", planId);
     return this.audit.wrap(ctx, { action: "plan.update", entityType: "plan", entityId: planId, before }, () =>
       this.store.plans.update(planId, patch),
     );
   }
   async updatePlanBySlug(ctx: AuditContext, slug: string, patch: Partial<Pick<Plan, "name" | "description" | "isActive" | "isPublic" | "prices">>): Promise<Plan> {
     const before = await this.store.plans.findBySlug(slug);
-    if (!before) throw new Error(`Plan ${slug} introuvable`);
+    if (!before) throw new NotFoundError("Plan", slug);
     return this.audit.wrap(ctx, { action: "plan.update", entityType: "plan", entityId: slug, before }, () =>
       this.store.plans.update(before.id, patch),
     );
@@ -134,7 +134,7 @@ export class PlanService {
     const resolved: PlanAdvantage[] = [];
     for (const a of advantages) {
       const advantage = await this.store.advantages.findByKey(a.advantageKey);
-      if (!advantage) throw new Error(`Avantage inconnu: "${a.advantageKey}". Créez-le d'abord via createAdvantage().`);
+      if (!advantage) throw new ValidationError(`Unknown advantage: "${a.advantageKey}". Create it first via createAdvantage()`, { advantageKey: a.advantageKey });
       resolved.push({
         planId,
         advantageId: advantage.id,

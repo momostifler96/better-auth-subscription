@@ -13,5 +13,5 @@
     "noEmit": true
   },
   "include": ["src", "scripts"],
-  "exclude": ["node_modules", "dist", "src/client/example.tsx"]
+  "exclude": ["node_modules", "dist", "src/client"]
 }

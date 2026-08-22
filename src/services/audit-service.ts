@@ -1,4 +1,3 @@
-import { newId } from "../repositories/memory/store.js";
 import type { AuditLogRepository } from "../repositories/interfaces.js";
 import type { AuditActorType, AuditLogEntry } from "../types/domain.js";
 
@@ -29,8 +28,7 @@ export class AuditService {
   constructor(private readonly repo: AuditLogRepository) {}
 
   async record(ctx: AuditContext, input: RecordAuditInput): Promise<AuditLogEntry> {
-    const entry: AuditLogEntry = {
-      id: newId("audit"),
+    const entry: Omit<AuditLogEntry, "id"> = {
       actorId: ctx.actorId,
       actorType: ctx.actorType,
       action: input.action,
@@ -38,10 +36,10 @@ export class AuditService {
       entityId: input.entityId,
       before: input.before,
       after: input.after,
-      metadata: input.metadata,
+      metadata: JSON.stringify(input.metadata),
       ip: ctx.ip,
       userAgent: ctx.userAgent,
-      createdAt: new Date(),
+      createdAt: (new Date()).toISOString()
     };
     return this.repo.append(entry);
   }

@@ -209,8 +209,8 @@ export interface AuditLogEntry {
   entityId: ID;
   before?: unknown;
   after?: unknown;
-  metadata?: Record<string, unknown>;
+  metadata?: string;
   ip?: string;
   userAgent?: string;
-  createdAt: Date;
+  createdAt: string;
 }

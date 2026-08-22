@@ -1,7 +1,7 @@
-import { newId } from "../repositories/memory/store.js";
 import type { SubscriptionStore } from "../repositories/interfaces.js";
 import type { PromoCode, PromoCodeType } from "../types/domain.js";
 import type { AuditContext, AuditService } from "./audit-service.js";
+import { NotFoundError, AlreadyExistsError, ValidationError, BadRequestError } from "../errors.js";
 
 export interface CreatePromoCodeInput {
   code: string;
@@ -38,15 +38,14 @@ export class PromoService {
 
   async createPromoCode(ctx: AuditContext, input: CreatePromoCodeInput): Promise<PromoCode> {
     const code = input.code.trim().toUpperCase();
-    if (!code) throw new Error("Le code promo ne peut pas être vide");
+    if (!code) throw new BadRequestError("Le code promo ne peut pas être vide");
     const existing = await this.store.promoCodes.findByCode(code);
-    if (existing) throw new Error(`Le code promo "${code}" existe déjà`);
-    if (input.type === "fixed" && !input.currency) throw new Error('Une devise est requise pour un code promo de type "fixed"');
-    if (input.value <= 0) throw new Error("La valeur du code promo doit être positive");
+    if (existing) throw new AlreadyExistsError("PromoCode", "code", code);
+    if (input.type === "fixed" && !input.currency) throw new ValidationError('Une devise est requise pour un code promo de type "fixed"', { type: "fixed", hasCurrency: false });
+    if (input.value <= 0) throw new ValidationError("La valeur du code promo doit être positive", { value: input.value });
 
     return this.audit.wrap(ctx, { action: "promo_code.create", entityType: "promo_code", entityId: code }, async () => {
-      const promo: PromoCode = {
-        id: newId("promo"),
+      const promo: Omit<PromoCode, "id"> = {
         code,
         type: input.type,
         value: input.value,
@@ -69,7 +68,7 @@ export class PromoService {
 
   async deactivate(ctx: AuditContext, promoCodeId: string): Promise<PromoCode> {
     const before = await this.store.promoCodes.findById(promoCodeId);
-    if (!before) throw new Error(`Code promo ${promoCodeId} introuvable`);
+    if (!before) throw new NotFoundError("PromoCode", promoCodeId);
     return this.audit.wrap(ctx, { action: "promo_code.deactivate", entityType: "promo_code", entityId: promoCodeId, before }, () =>
       this.store.promoCodes.update(promoCodeId, { isActive: false }),
     );
@@ -82,28 +81,28 @@ export class PromoService {
   /** Vérifie qu'un code peut être utilisé dans ce contexte, sans le consommer. */
   async validate(code: string, context: ValidatePromoContext): Promise<PromoValidationResult> {
     const promo = await this.store.promoCodes.findByCode(code);
-    if (!promo) throw new Error(`Code promo "${code}" introuvable`);
-    if (!promo.isActive) throw new Error(`Le code promo "${promo.code}" n'est plus actif`);
+    if (!promo) throw new NotFoundError("PromoCode", code);
+    if (!promo.isActive) throw new BadRequestError(`Le code promo "${promo.code}" n'est plus actif`, { code: promo.code });
 
     const now = new Date();
-    if (promo.validFrom > now) throw new Error(`Le code promo "${promo.code}" n'est pas encore valide`);
-    if (promo.validUntil && promo.validUntil < now) throw new Error(`Le code promo "${promo.code}" a expiré`);
+    if (promo.validFrom > now) throw new ValidationError(`Le code promo "${promo.code}" n'est pas encore valide`, { code: promo.code, validFrom: promo.validFrom });
+    if (promo.validUntil && promo.validUntil < now) throw new ValidationError(`Le code promo "${promo.code}" a expiré`, { code: promo.code, validUntil: promo.validUntil });
 
     if (promo.maxRedemptions !== undefined && promo.redemptionCount >= promo.maxRedemptions) {
-      throw new Error(`Le code promo "${promo.code}" a atteint son nombre maximal d'utilisations`);
+      throw new ValidationError(`Le code promo "${promo.code}" a atteint son nombre maximal d'utilisations`, { code: promo.code, maxRedemptions: promo.maxRedemptions, count: promo.redemptionCount });
     }
 
     if (promo.applicablePlanIds.length && context.planId && !promo.applicablePlanIds.includes(context.planId)) {
-      throw new Error(`Le code promo "${promo.code}" n'est pas applicable à ce plan`);
+      throw new BadRequestError(`Le code promo "${promo.code}" n'est pas applicable à ce plan`, { code: promo.code, planId: context.planId });
     }
     if (promo.applicablePartnerIds.length && context.partnerId && !promo.applicablePartnerIds.includes(context.partnerId)) {
-      throw new Error(`Le code promo "${promo.code}" n'est pas applicable à ce partenaire`);
+      throw new BadRequestError(`Le code promo "${promo.code}" n'est pas applicable à ce partenaire`, { code: promo.code, partnerId: context.partnerId });
     }
 
     if (promo.perUserLimit !== undefined) {
       const used = await this.store.promoCodes.countRedemptionsForUser(promo.id, context.userId);
       if (used >= promo.perUserLimit) {
-        throw new Error(`Le code promo "${promo.code}" a déjà été utilisé le nombre maximal de fois par cet utilisateur`);
+        throw new ValidationError(`Le code promo "${promo.code}" a déjà été utilisé le nombre maximal de fois par cet utilisateur`, { code: promo.code, perUserLimit: promo.perUserLimit, used });
       }
     }
 
@@ -117,10 +116,9 @@ export class PromoService {
       { action: "promo_code.redeem", entityType: "promo_code", entityId: input.promoCodeId, metadata: { userId: input.userId, subscriptionId: input.subscriptionId } },
       async () => {
         const promo = await this.store.promoCodes.findById(input.promoCodeId);
-        if (!promo) throw new Error(`Code promo ${input.promoCodeId} introuvable`);
+        if (!promo) throw new NotFoundError("PromoCode", input.promoCodeId);
         await this.store.promoCodes.update(promo.id, { redemptionCount: promo.redemptionCount + 1 });
         await this.store.promoCodes.addRedemption({
-          id: newId("redeem"),
           promoCodeId: promo.id,
           userId: input.userId,
           subscriptionId: input.subscriptionId,

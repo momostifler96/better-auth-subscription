@@ -26,15 +26,17 @@ import type {
   UsageRepository,
 } from "../interfaces.js";
 
-export function newId(prefix: string): string {
+function generateId(prefix: string): string {
   return `${prefix}_${randomUUID()}`;
 }
 
 class MemoryAdvantageRepository implements AdvantageRepository {
   private rows = new Map<string, Advantage>();
-  async create(a: Advantage) {
-    this.rows.set(a.id, a);
-    return a;
+  async create(a: Omit<Advantage, "id">) {
+    const id = generateId("adv");
+    const row = { ...a, id } as Advantage;
+    this.rows.set(id, row);
+    return row;
   }
   async update(key: string, patch: Partial<Advantage>) {
     const current = await this.findByKey(key);
@@ -56,9 +58,11 @@ class MemoryAdvantageRepository implements AdvantageRepository {
 
 class MemoryPartnerRepository implements PartnerRepository {
   private rows = new Map<string, Partner>();
-  async create(p: Partner) {
-    this.rows.set(p.id, p);
-    return p;
+  async create(p: Omit<Partner, "id">) {
+    const id = generateId("partner");
+    const row = { ...p, id } as Partner;
+    this.rows.set(id, row);
+    return row;
   }
   async update(id: string, patch: Partial<Partner>) {
     const existing = this.rows.get(id);
@@ -80,9 +84,11 @@ class MemoryPartnerRepository implements PartnerRepository {
 
 class MemoryPlanRepository implements PlanRepository {
   private rows = new Map<string, Plan>();
-  async create(p: Plan) {
-    this.rows.set(p.id, p);
-    return p;
+  async create(p: Omit<Plan, "id">) {
+    const id = generateId("plan");
+    const row = { ...p, id } as Plan;
+    this.rows.set(id, row);
+    return row;
   }
   async update(id: string, patch: Partial<Plan>) {
     const existing = this.rows.get(id);
@@ -120,9 +126,11 @@ class MemoryPlanAdvantageRepository implements PlanAdvantageRepository {
 
 class MemorySubscriptionRepository implements SubscriptionRepository {
   private rows = new Map<string, Subscription>();
-  async create(s: Subscription) {
-    this.rows.set(s.id, s);
-    return s;
+  async create(s: Omit<Subscription, "id">) {
+    const id = generateId("sub");
+    const row = { ...s, id } as Subscription;
+    this.rows.set(id, row);
+    return row;
   }
   async update(id: string, patch: Partial<Subscription>) {
     const existing = this.rows.get(id);
@@ -151,9 +159,11 @@ class MemorySubscriptionRepository implements SubscriptionRepository {
 
 class MemoryCustomRequestRepository implements CustomSubscriptionRequestRepository {
   private rows = new Map<string, CustomSubscriptionRequest>();
-  async create(r: CustomSubscriptionRequest) {
-    this.rows.set(r.id, r);
-    return r;
+  async create(r: Omit<CustomSubscriptionRequest, "id">) {
+    const id = generateId("csr");
+    const row = { ...r, id } as CustomSubscriptionRequest;
+    this.rows.set(id, row);
+    return row;
   }
   async update(id: string, patch: Partial<CustomSubscriptionRequest>) {
     const existing = this.rows.get(id);
@@ -173,9 +183,11 @@ class MemoryCustomRequestRepository implements CustomSubscriptionRequestReposito
 class MemoryPromoCodeRepository implements PromoCodeRepository {
   private rows = new Map<string, PromoCode>();
   private redemptions: PromoRedemption[] = [];
-  async create(p: PromoCode) {
-    this.rows.set(p.id, p);
-    return p;
+  async create(p: Omit<PromoCode, "id">) {
+    const id = generateId("promo");
+    const row = { ...p, id } as PromoCode;
+    this.rows.set(id, row);
+    return row;
   }
   async update(id: string, patch: Partial<PromoCode>) {
     const existing = this.rows.get(id);
@@ -194,9 +206,11 @@ class MemoryPromoCodeRepository implements PromoCodeRepository {
   async list() {
     return [...this.rows.values()];
   }
-  async addRedemption(r: PromoRedemption) {
-    this.redemptions.push(r);
-    return r;
+  async addRedemption(r: Omit<PromoRedemption, "id">) {
+    const id = generateId("redeem");
+    const row = { ...r, id } as PromoRedemption;
+    this.redemptions.push(row);
+    return row;
   }
   async countRedemptionsForUser(promoCodeId: string, userId: string) {
     return this.redemptions.filter((r) => r.promoCodeId === promoCodeId && r.userId === userId).length;
@@ -205,9 +219,11 @@ class MemoryPromoCodeRepository implements PromoCodeRepository {
 
 class MemoryUsageRepository implements UsageRepository {
   private rows: UsageRecord[] = [];
-  async record(u: UsageRecord) {
-    this.rows.push(u);
-    return u;
+  async record(u: Omit<UsageRecord, "id">) {
+    const id = generateId("usage");
+    const row = { ...u, id } as UsageRecord;
+    this.rows.push(row);
+    return row;
   }
   async sumForPeriod(subscriptionId: string, advantageKey: string, periodStart: Date, periodEnd: Date) {
     return this.rows
@@ -224,9 +240,11 @@ class MemoryUsageRepository implements UsageRepository {
 
 class MemoryOverageAuthorizationRepository implements OverageAuthorizationRepository {
   private rows = new Map<string, OverageAuthorization>();
-  async create(a: OverageAuthorization) {
-    this.rows.set(a.id, a);
-    return a;
+  async create(a: Omit<OverageAuthorization, "id">) {
+    const id = generateId("overage_auth");
+    const row = { ...a, id } as OverageAuthorization;
+    this.rows.set(id, row);
+    return row;
   }
   async revoke(id: string) {
     const existing = this.rows.get(id);
@@ -253,9 +271,11 @@ class MemoryOverageAuthorizationRepository implements OverageAuthorizationReposi
 
 class MemoryAuditLogRepository implements AuditLogRepository {
   private rows: AuditLogEntry[] = [];
-  async append(entry: AuditLogEntry) {
-    this.rows.push(entry);
-    return entry;
+  async append(entry: Omit<AuditLogEntry, "id">) {
+    const id = generateId("audit");
+    const row = { ...entry, id } as AuditLogEntry;
+    this.rows.push(row);
+    return row;
   }
   async listForEntity(entityType: string, entityId: string) {
     return this.rows.filter((r) => r.entityType === entityType && r.entityId === entityId);

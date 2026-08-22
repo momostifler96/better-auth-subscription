@@ -19,7 +19,7 @@ import type {
  */
 
 export interface AdvantageRepository {
-  create(advantage: Advantage): Promise<Advantage>;
+  create(advantage: Omit<Advantage, "id">): Promise<Advantage>;
   update(key: string, patch: Partial<Advantage>): Promise<Advantage>;
   findById(id: string): Promise<Advantage | null>;
   findByKey(key: string): Promise<Advantage | null>;
@@ -27,7 +27,7 @@ export interface AdvantageRepository {
 }
 
 export interface PartnerRepository {
-  create(partner: Partner): Promise<Partner>;
+  create(partner: Omit<Partner, "id">): Promise<Partner>;
   update(id: string, patch: Partial<Partner>): Promise<Partner>;
   findById(id: string): Promise<Partner | null>;
   findBySlug(slug: string): Promise<Partner | null>;
@@ -35,7 +35,7 @@ export interface PartnerRepository {
 }
 
 export interface PlanRepository {
-  create(plan: Plan): Promise<Plan>;
+  create(plan: Omit<Plan, "id">): Promise<Plan>;
   update(id: string, patch: Partial<Plan>): Promise<Plan>;
   findById(id: string): Promise<Plan | null>;
   findBySlug(slug: string): Promise<Plan | null>;
@@ -49,7 +49,7 @@ export interface PlanAdvantageRepository {
 }
 
 export interface SubscriptionRepository {
-  create(sub: Subscription): Promise<Subscription>;
+  create(sub: Omit<Subscription, "id">): Promise<Subscription>;
   update(id: string, patch: Partial<Subscription>): Promise<Subscription>;
   findById(id: string): Promise<Subscription | null>;
   findByExternalId(externalSubscriptionId: string): Promise<Subscription | null>;
@@ -58,36 +58,36 @@ export interface SubscriptionRepository {
 }
 
 export interface CustomSubscriptionRequestRepository {
-  create(req: CustomSubscriptionRequest): Promise<CustomSubscriptionRequest>;
+  create(req: Omit<CustomSubscriptionRequest, "id">): Promise<CustomSubscriptionRequest>;
   update(id: string, patch: Partial<CustomSubscriptionRequest>): Promise<CustomSubscriptionRequest>;
   findById(id: string): Promise<CustomSubscriptionRequest | null>;
   listPending(): Promise<CustomSubscriptionRequest[]>;
 }
 
 export interface PromoCodeRepository {
-  create(promo: PromoCode): Promise<PromoCode>;
+  create(promo: Omit<PromoCode, "id">): Promise<PromoCode>;
   update(id: string, patch: Partial<PromoCode>): Promise<PromoCode>;
   findById(id: string): Promise<PromoCode | null>;
   findByCode(code: string): Promise<PromoCode | null>;
   list(): Promise<PromoCode[]>;
-  addRedemption(redemption: PromoRedemption): Promise<PromoRedemption>;
+  addRedemption(redemption: Omit<PromoRedemption, "id">): Promise<PromoRedemption>;
   countRedemptionsForUser(promoCodeId: string, userId: string): Promise<number>;
 }
 
 export interface UsageRepository {
-  record(usage: UsageRecord): Promise<UsageRecord>;
+  record(usage: Omit<UsageRecord, "id">): Promise<UsageRecord>;
   sumForPeriod(subscriptionId: string, advantageKey: string, periodStart: Date, periodEnd: Date): Promise<number>;
 }
 
 export interface OverageAuthorizationRepository {
-  create(auth: OverageAuthorization): Promise<OverageAuthorization>;
+  create(auth: Omit<OverageAuthorization, "id">): Promise<OverageAuthorization>;
   revoke(id: string): Promise<void>;
   findActive(subscriptionId: string, advantageKey: string): Promise<OverageAuthorization | null>;
   listForSubscription(subscriptionId: string): Promise<OverageAuthorization[]>;
 }
 
 export interface AuditLogRepository {
-  append(entry: AuditLogEntry): Promise<AuditLogEntry>;
+  append(entry: Omit<AuditLogEntry, "id">): Promise<AuditLogEntry>;
   listForEntity(entityType: string, entityId: string): Promise<AuditLogEntry[]>;
   listForActor(actorId: string): Promise<AuditLogEntry[]>;
   query(filter: { action?: string; entityType?: string; from?: Date; to?: Date }): Promise<AuditLogEntry[]>;

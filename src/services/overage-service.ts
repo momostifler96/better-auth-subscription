@@ -1,9 +1,9 @@
-import { newId } from "../repositories/memory/store.js";
 import type { SubscriptionStore } from "../repositories/interfaces.js";
 import type { OverageAuthorization, Subscription } from "../types/domain.js";
 import type { AuditContext, AuditService } from "./audit-service.js";
 import type { PaymentProviderRegistry } from "../providers/registry.js";
 import type { PlanService } from "./plan-service.js";
+import { NotFoundError, ValidationError, BadRequestError } from "../errors.js";
 
 export interface RecordUsageInput {
   subscriptionId: string;
@@ -45,7 +45,7 @@ export class OverageService {
   ) {}
 
   async authorizeOverage(ctx: AuditContext, input: AuthorizeOverageInput): Promise<OverageAuthorization> {
-    if (!input.reason?.trim()) throw new Error("Un motif est obligatoire pour autoriser un dépassement");
+    if (!input.reason?.trim()) throw new BadRequestError("Reason is required to authorize overage");
     const subscription = await this.mustGetSubscription(input.subscriptionId);
     await this.assertQuantityAdvantage(input.advantageKey);
 
@@ -58,8 +58,7 @@ export class OverageService {
         metadata: { advantageKey: input.advantageKey, authorizedExtraLimit: input.authorizedExtraLimit, reason: input.reason },
       },
       async () => {
-        const auth: OverageAuthorization = {
-          id: newId("overage_auth"),
+        const auth: Omit<OverageAuthorization, "id"> = {
           subscriptionId: input.subscriptionId,
           advantageKey: input.advantageKey,
           authorizedExtraLimit: input.authorizedExtraLimit,
@@ -121,22 +120,23 @@ export class OverageService {
           const overageAllowedOnPlan = planAdvantage?.overageAllowed ?? false;
           const activeAuth = await this.store.overageAuthorizations.findActive(subscription.id, input.advantageKey);
           if (!overageAllowedOnPlan || !activeAuth) {
-            throw new Error(
+            throw new ValidationError(
               `Limite atteinte pour "${input.advantageKey}" (limite: ${planLimit}, déjà utilisé: ${alreadyUsed}, demandé: ${input.quantity}) et aucun dépassement autorisé.`,
+              { advantageKey: input.advantageKey, planLimit, used: alreadyUsed, requested: input.quantity },
             );
           }
           authorizedExtraLimit = activeAuth.authorizedExtraLimit;
           const maxAllowed = authorizedExtraLimit === null ? null : (planLimit ?? 0) + authorizedExtraLimit;
           if (maxAllowed !== null && projected > maxAllowed) {
-            throw new Error(
+            throw new ValidationError(
               `Dépassement autorisé insuffisant pour "${input.advantageKey}" (plafond autorisé: ${maxAllowed}, demandé au total: ${projected}).`,
+              { advantageKey: input.advantageKey, authorizedLimit: maxAllowed, requested: projected },
             );
           }
           usedOverage = true;
         }
 
         await this.store.usage.record({
-          id: newId("usage"),
           subscriptionId: subscription.id,
           advantageKey: input.advantageKey,
           quantity: input.quantity,
@@ -173,16 +173,19 @@ export class OverageService {
 
   private async assertQuantityAdvantage(advantageKey: string) {
     const advantage = await this.plans.findAdvantageByKey(advantageKey);
-    if (!advantage) throw new Error(`Avantage inconnu: "${advantageKey}"`);
+    if (!advantage) throw new NotFoundError("Advantage", advantageKey);
     if (advantage.valueType !== "quantity") {
-      throw new Error(`L'avantage "${advantageKey}" est de type "boolean" : la notion de dépassement ne s'applique pas.`);
+      throw new ValidationError(
+        `L'avantage "${advantageKey}" est de type "boolean" : la notion de dépassement ne s'applique pas.`,
+        { advantageKey, expectedType: "quantity", actualType: advantage.valueType },
+      );
     }
     return advantage;
   }
 
   private async mustGetSubscription(id: string): Promise<Subscription> {
     const sub = await this.store.subscriptions.findById(id);
-    if (!sub) throw new Error(`Souscription ${id} introuvable`);
+    if (!sub) throw new NotFoundError("Subscription", id);
     return sub;
   }
 }

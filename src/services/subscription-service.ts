@@ -1,4 +1,3 @@
-import { newId } from "../repositories/memory/store.js";
 import type { SubscriptionStore } from "../repositories/interfaces.js";
 import type { PaymentProviderRegistry } from "../providers/registry.js";
 import type { ProviderWebhookEvent } from "../providers/types.js";
@@ -12,6 +11,7 @@ import type {
 import type { AuditContext, AuditService } from "./audit-service.js";
 import type { PlanService } from "./plan-service.js";
 import type { PromoService } from "./promo-service.js";
+import { NotFoundError, BadRequestError, ValidationError } from "../errors.js";
 
 export interface SubscribeInput {
   userId: string;
@@ -21,6 +21,10 @@ export interface SubscribeInput {
   provider?: ProviderKey;
   promoCode?: string;
   quantity?: number;
+  /** Manual provider only: proof of payment (base64 or URL) */
+  manualProofUrl?: string;
+  /** Manual provider only: optional metadata (developer configurable) */
+  manualMetadata?: Record<string, unknown>;
 }
 
 export interface CustomSubscriptionRequestInput {
@@ -60,8 +64,8 @@ export class SubscriptionService {
 
   async subscribe(ctx: AuditContext, input: SubscribeInput): Promise<Subscription> {
     const plan = await this.plans.getPlan(input.planId);
-    if (!plan) throw new Error(`Plan ${input.planId} introuvable`);
-    if (!plan.isActive) throw new Error(`Le plan "${plan.name}" n'est plus actif`);
+    if (!plan) throw new NotFoundError("Plan", input.planId);
+    if (!plan.isActive) throw new BadRequestError(`Le plan "${plan.name}" n'est plus actif`);
 
     return this.audit.wrap(
       ctx,
@@ -74,7 +78,7 @@ export class SubscriptionService {
         const provider = this.providers.get(providerKey);
         const price = plan.prices.find((p) => p.provider === providerKey);
         if (!isPartnerFree && providerKey !== "manual" && !price) {
-          throw new Error(`Le plan "${plan.name}" n'a pas de prix configuré pour le provider "${providerKey}"`);
+          throw new BadRequestError(`Le plan "${plan.name}" n'a pas de prix configuré pour le provider "${providerKey}"`, { planId: plan.id, provider: providerKey });
         }
 
         let discountPercent = partner?.discountPercent ?? 0;
@@ -109,8 +113,7 @@ export class SubscriptionService {
             });
 
         const now = new Date();
-        const subscription: Subscription = {
-          id: newId("sub"),
+        const subscription: Omit<Subscription, "id"> = {
           userId: input.userId,
           planId: plan.id,
           status: providerSub.status === "active" ? "active" : "trialing",
@@ -141,14 +144,14 @@ export class SubscriptionService {
   async changePlan(ctx: AuditContext, subscriptionId: string, newPlanId: string): Promise<Subscription> {
     const sub = await this.mustGetSubscription(subscriptionId);
     const newPlan = await this.plans.getPlan(newPlanId);
-    if (!newPlan) throw new Error(`Plan ${newPlanId} introuvable`);
+    if (!newPlan) throw new NotFoundError("Plan", newPlanId);
     return this.audit.wrap(
       ctx,
       { action: "subscription.change_plan", entityType: "subscription", entityId: subscriptionId, before: sub, metadata: { newPlanId } },
       async () => {
         if (sub.provider !== "manual" && sub.externalSubscriptionId) {
           const price = newPlan.prices.find((p) => p.provider === sub.provider);
-          if (!price) throw new Error(`Le plan "${newPlan.name}" n'a pas de prix pour le provider "${sub.provider}"`);
+          if (!price) throw new BadRequestError(`Le plan "${newPlan.name}" n'a pas de prix pour le provider "${sub.provider}"`, { planId: newPlan.id, provider: sub.provider });
           await this.providers.get(sub.provider).updateSubscription({
             externalSubscriptionId: sub.externalSubscriptionId,
             newExternalPriceId: price.externalPriceId,
@@ -187,7 +190,7 @@ export class SubscriptionService {
 
   private async mustGetSubscription(id: string): Promise<Subscription> {
     const sub = await this.store.subscriptions.findById(id);
-    if (!sub) throw new Error(`Souscription ${id} introuvable`);
+    if (!sub) throw new NotFoundError("Subscription", id);
     return sub;
   }
 
@@ -255,8 +258,7 @@ export class SubscriptionService {
       { action: "custom_request.create", entityType: "custom_subscription_request", entityId: input.requestedByUserId },
       async () => {
         const now = new Date();
-        const request: CustomSubscriptionRequest = {
-          id: newId("csr"),
+        const request: Omit<CustomSubscriptionRequest, "id"> = {
           requestedByUserId: input.requestedByUserId,
           requestedAdvantages: input.requestedAdvantages,
           proposedPriceCents: input.proposedPriceCents,
@@ -283,8 +285,8 @@ export class SubscriptionService {
    */
   async approveCustomRequest(ctx: AuditContext, requestId: string, review: ReviewCustomRequestInput): Promise<Subscription> {
     const request = await this.store.customRequests.findById(requestId);
-    if (!request) throw new Error(`Demande ${requestId} introuvable`);
-    if (request.status !== "pending") throw new Error(`Demande ${requestId} déjà traitée (statut: ${request.status})`);
+    if (!request) throw new NotFoundError("CustomSubscriptionRequest", requestId);
+    if (request.status !== "pending") throw new BadRequestError(`Demande ${requestId} déjà traitée (statut: ${request.status})`, { requestId, status: request.status });
 
     return this.audit.wrap(
       ctx,
@@ -321,7 +323,7 @@ export class SubscriptionService {
 
   async rejectCustomRequest(ctx: AuditContext, requestId: string, review: { reviewedByUserId: string; reviewNotes?: string }): Promise<CustomSubscriptionRequest> {
     const request = await this.store.customRequests.findById(requestId);
-    if (!request) throw new Error(`Demande ${requestId} introuvable`);
+    if (!request) throw new NotFoundError("CustomSubscriptionRequest", requestId);
     return this.audit.wrap(
       ctx,
       { action: "custom_request.reject", entityType: "custom_subscription_request", entityId: requestId, before: request },
