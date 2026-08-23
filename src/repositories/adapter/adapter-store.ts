@@ -24,7 +24,7 @@ import type {
   SubscriptionStore,
   UsageRepository,
 } from "../interfaces.js";
-import { serialize, deserialize, serializeMany, deserializeMany } from "../serialization.js";
+import { serialize, deserialize, deserializeMany } from "../serialization.js";
 type BetterAuthWhereOperator =
 | "eq"
 | "ne"
@@ -45,10 +45,10 @@ type BetterAuthWhere ={
 type BetterAuthAdapter = {
   create: <T = any>(payload:{model: string, data: Record<string, any>}) => Promise<T>;
   findOne: <T = any>(opts: { model: string; where: BetterAuthWhere[]; select?: Record<string, boolean>; sortBy?: Record<string, 'asc' | 'desc'> }) => Promise<T | null>;
-  findMany: <T = any>(opts: { model: string; where?: Record<string, any>; limit?: number; select?: Record<string, boolean>; offset?: number; sortBy?: Record<string, 'asc' | 'desc'>; join?: Record<string, boolean> }) => Promise<T[]>;
+  findMany: <T = any>(opts: { model: string; where?: BetterAuthWhere[]; limit?: number; select?: Record<string, boolean>; offset?: number; sortBy?: Record<string, 'asc' | 'desc'>; join?: Record<string, boolean> }) => Promise<T[]>;
   update: <T = any>(opts: { model: string; where: BetterAuthWhere[]; data: Partial<T> }) => Promise<T>;
   delete: (opts: { model: string; where: BetterAuthWhere[] }) => Promise<void>;
-  count: (opts: { model: string; where?: Record<string, any> }) => Promise<number>;
+  count: (opts: { model: string; where?: BetterAuthWhere[] }) => Promise<number>;
   incrementOne: <T = any>(opts: { model: string; where: BetterAuthWhere[]; increment: number; set?: Record<string, any> }) => Promise<T | null>;
   deleteMany: (opts: { model: string; where: BetterAuthWhere[] }) => Promise<number>;
 };
@@ -194,11 +194,31 @@ class AdapterPlanRepository implements PlanRepository {
     if (filter?.partnerId) where.partnerId = filter.partnerId;
     if (filter?.isPublic !== undefined) where.isPublic = filter.isPublic;
 
-    const results = await this.adapter.findMany<Plan>({
+    const plans = await this.adapter.findMany<Plan>({
       model: "plan",
-      where: Object.keys(where).length > 0 ? where : undefined,
+      where: Object.keys(where).length > 0 ? toWhere(where) : undefined,
+      join:{planAdvantage:true}
     });
-    return deserializeMany("plan", results);
+    const planAdvantages =  await this.adapter.findMany<PlanAdvantage>({
+      model: "planAdvantage",
+      where: [{field:'plan_id',operator:'in',value:plans.map((p)=>p.id)}],
+    })
+    const advantages =  await this.adapter.findMany<Advantage>({
+      model: "advantage",
+      where: [{field:'id',operator:'in',value:planAdvantages.map((pa)=>pa.advantageId)}],
+    })
+    const results = deserializeMany("plan", plans).map(plan => {
+      return {
+        ...plan,
+        advantages: planAdvantages.filter(a => a.planId === plan.id).map(pa => {
+          return {
+            ...pa,
+            advantage: advantages.find(adv => adv.id === pa.advantageId)
+          };
+        })
+      };
+    });
+    return results;
   }
 }
 
@@ -213,16 +233,18 @@ class AdapterPlanAdvantageRepository implements PlanAdvantageRepository {
 
     const created = [];
     for (const a of advantages) {
-      const result = await this.adapter.create<PlanAdvantage>({ model: "planAdvantage", data: a });
+      const rest = { ...a, createdAt: new Date(), updatedAt: new Date() };
+      const result = await this.adapter.create<PlanAdvantage>({ model: "planAdvantage", data: serialize("planAdvantage", rest) });
       created.push(result);
     }
-    return created;
+    return deserializeMany("planAdvantage", created);
   }
 
   async listForPlan(planId: string): Promise<PlanAdvantage[]> {
     return await this.adapter.findMany<PlanAdvantage>({
       model: "planAdvantage",
-      where: { planId },
+      where: toWhere({ planId }),
+      join:{'advantage':true}
     });
   }
 }
@@ -266,7 +288,7 @@ class AdapterSubscriptionRepository implements SubscriptionRepository {
   async findActiveForUser(userId: string): Promise<Subscription | null> {
     const subs = await this.adapter.findMany<Subscription>({
       model: "subscription",
-      where: { userId, status: "active" },
+      where: toWhere({ userId, status: "active" }),
     });
     return subs[0] ? deserialize("subscription", subs[0]) : null;
   }
@@ -274,7 +296,7 @@ class AdapterSubscriptionRepository implements SubscriptionRepository {
   async listForUser(userId: string): Promise<Subscription[]> {
     const results = await this.adapter.findMany<Subscription>({
       model: "subscription",
-      where: { userId },
+      where: toWhere({ userId }),
     });
     return deserializeMany("subscription", results);
   }
@@ -311,7 +333,7 @@ class AdapterCustomSubscriptionRequestRepository implements CustomSubscriptionRe
   async listPending(): Promise<CustomSubscriptionRequest[]> {
     const results = await this.adapter.findMany<CustomSubscriptionRequest>({
       model: "customSubscriptionRequest",
-      where: { status: "pending" },
+      where: toWhere({ status: "pending" }),
     });
     return deserializeMany("customSubscriptionRequest", results);
   }
@@ -370,7 +392,7 @@ class AdapterPromoCodeRepository implements PromoCodeRepository {
   async countRedemptionsForUser(promoCodeId: string, userId: string): Promise<number> {
     return await this.adapter.count({
       model: "promoRedemption",
-      where: { promoCodeId, userId },
+      where: toWhere({ promoCodeId, userId }),
     });
   }
 }
@@ -388,7 +410,7 @@ class AdapterUsageRepository implements UsageRepository {
   async sumForPeriod(subscriptionId: string, advantageKey: string, periodStart: Date, periodEnd: Date): Promise<number> {
     const records: UsageRecord[] = await this.adapter.findMany<UsageRecord>({
       model: "usageRecord",
-      where: { subscriptionId, advantageKey },
+      where: toWhere({ subscriptionId, advantageKey }),
     });
 
     const deserialized = deserializeMany("usageRecord", records);
@@ -420,7 +442,7 @@ class AdapterOverageAuthorizationRepository implements OverageAuthorizationRepos
   async findActive(subscriptionId: string, advantageKey: string): Promise<OverageAuthorization | null> {
     const auths: OverageAuthorization[] = await this.adapter.findMany<OverageAuthorization>({
       model: "overageAuthorization",
-      where: { subscriptionId, advantageKey, isActive: true },
+      where: toWhere({ subscriptionId, advantageKey, isActive: true }),
     });
 
     const deserialized = deserializeMany("overageAuthorization", auths);
@@ -435,7 +457,7 @@ class AdapterOverageAuthorizationRepository implements OverageAuthorizationRepos
   async listForSubscription(subscriptionId: string): Promise<OverageAuthorization[]> {
     const results = await this.adapter.findMany<OverageAuthorization>({
       model: "overageAuthorization",
-      where: { subscriptionId },
+      where: toWhere({ subscriptionId }),
     });
     return deserializeMany("overageAuthorization", results);
   }
@@ -454,7 +476,7 @@ class AdapterAuditLogRepository implements AuditLogRepository {
   async listForEntity(entityType: string, entityId: string): Promise<AuditLogEntry[]> {
     const results = await this.adapter.findMany<AuditLogEntry>({
       model: "subscriptionAudit",
-      where: { entityType, entityId },
+      where: toWhere({ entityType, entityId }),
     });
     return deserializeMany("subscriptionAudit", results);
   }
@@ -462,7 +484,7 @@ class AdapterAuditLogRepository implements AuditLogRepository {
   async listForActor(actorId: string): Promise<AuditLogEntry[]> {
     const results = await this.adapter.findMany<AuditLogEntry>({
       model: "subscriptionAudit",
-      where: { actorId },
+      where: toWhere({ actorId }),
     });
     return deserializeMany("subscriptionAudit", results);
   }

@@ -51,6 +51,9 @@ export interface PlanAdvantage {
   value: boolean | number | null;
   /** Autorise le dépassement de cette limite précise pour ce plan (voir OverageService) */
   overageAllowed: boolean;
+  isActive: boolean;
+  advantage?: Advantage;
+  plan?: Plan;
   /** Prix unitaire du dépassement si overageAllowed=true (en plus petite unité monétaire, ex: centimes) */
   overageUnitPriceCents?: number;
 }
@@ -76,6 +79,8 @@ export interface Plan {
   isActive: boolean;
   /** Prix multi-provider ; vide pour un plan gratuit ou un plan "manual" (partenaire) */
   prices: PlanPrice[];
+
+  advantages?: PlanAdvantage[];
   /** Partenaire propriétaire, uniquement pour kind="partner" */
   partnerId?: ID;
   /** Demande d'origine, uniquement pour kind="custom" */

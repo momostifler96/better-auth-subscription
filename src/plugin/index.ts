@@ -7,17 +7,19 @@ import { isAppError, type ErrorCode } from "../errors.js";
 const unRepresentableOption = {unrepresentable: "any" as const}
 
 function handleServiceError(ctx: any, error: unknown): never {
-  if (isAppError(error)) {
+  if (isAppError(error) ) {
     throw ctx.error(error.code as ErrorCode, {
       message: error.message,
       ...(error.details && { details: error.details })
     });
   }
-  throw error;
+  throw ctx.error('INTERNAL_SERVER_ERROR', {
+      message: error instanceof Error ? error.message : String(error),
+  });
 }
 
-function getAdapterServices(ctx: any, providers: any): SubscriptionServices {
-  return createSubscriptionServicesWithAdapter(ctx.context.adapter, providers);
+function getAdapterServices(adapter: any, providers: any): SubscriptionServices {
+  return createSubscriptionServicesWithAdapter(adapter, providers);
 }
 import {
     advantageSchema,
@@ -118,7 +120,8 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             },
         } as any,
         async (ctx) => {
-            const svc = getAdapterServices(ctx, options.providers);
+            ctx.context.adapter.findOne({model:'plan',where:[],join:{'advantage':true,}})
+            const svc = getAdapterServices(ctx.context.adapter, options.providers);
             const plans = await svc.plans.listPlans({ isPublic: true });
             return ctx.json({ plans });
         },
@@ -158,11 +161,10 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
             try {
-                const svc = getAdapterServices(ctx, options.providers);
+                const svc = getAdapterServices(ctx.context.adapter, options.providers);
                 const advantage = await svc.plans.createAdvantage(toAuditContext(user, isAdmin, ctx), ctx.body);
                 return ctx.json({ advantage });
             } catch (error) {
-               throw ctx.context.logger.error('create advantage error',error);
                 handleServiceError(ctx, error);
             }
         },
@@ -207,7 +209,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             if (!key) throw ctx.error("BAD_REQUEST", { message: "Clé d'avantage requise" });
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
             try {
-                const svc = getAdapterServices(ctx, options.providers);
+                const svc = getAdapterServices(ctx.context.adapter, options.providers);
                 const advantage = await svc.plans.updateAdvantage(toAuditContext(user, isAdmin, ctx), key, ctx.body);
                 return ctx.json({ advantage });
             } catch (error) {
@@ -240,7 +242,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
-            const svc = getAdapterServices(ctx, options.providers);
+            const svc = getAdapterServices(ctx.context.adapter, options.providers);
             const advantages = await svc.plans.listAdvantages();
             return ctx.json({ advantages });
         },
@@ -281,9 +283,11 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
             try {
-                const svc = getAdapterServices(ctx, options.providers);
-                const plan = await svc.plans.createPlan(toAuditContext(user, isAdmin, ctx), ctx.body);
-                return ctx.json({ plan });
+              return await ctx.context.adapter.transaction(async (dbAdapter) => {
+                    const svc = getAdapterServices(dbAdapter, options.providers);
+                    const plan = await svc.plans.createPlan(toAuditContext(user, isAdmin, ctx), ctx.body);
+                    return ctx.json({ plan });
+                });
             } catch (error) {
                 handleServiceError(ctx, error);
             }
@@ -328,7 +332,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             if (!slug) throw ctx.error("BAD_REQUEST", { message: "Slug de plan requis" });
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
             try {
-                const svc = getAdapterServices(ctx, options.providers);
+                const svc = getAdapterServices(ctx.context.adapter, options.providers);
                 const plan = await svc.plans.updatePlanBySlug(toAuditContext(user, isAdmin, ctx), slug, ctx.body);
                 return ctx.json({ plan });
             } catch (error) {
@@ -363,7 +367,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         } as any,
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
-            const svc = getAdapterServices(ctx, options.providers);
+            const svc = getAdapterServices(ctx.context.adapter, options.providers);
             const subscription = await svc.subscriptions.getActiveForUser(user.id);
             if (!subscription) return ctx.json({ subscription: null, advantages: [] });
             const advantages = await svc.plans.getEffectiveAdvantages(subscription);
@@ -410,7 +414,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             }
 
             try {
-                const svc = getAdapterServices(ctx, options.providers);
+                const svc = getAdapterServices(ctx.context.adapter, options.providers);
                 const subscription = await svc.subscriptions.subscribe(toAuditContext(user, isAdmin, ctx), {
                     userId: user.id,
                     email: (user.email as string | undefined) ?? undefined,
@@ -460,7 +464,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         } as any,
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
-            const svc = getAdapterServices(ctx, options.providers);
+            const svc = getAdapterServices(ctx.context.adapter, options.providers);
             const existing = await svc.subscriptions.getSubscription(ctx.body.subscriptionId);
             if (!existing) throw ctx.error("NOT_FOUND", { message: "Souscription introuvable" });
             if (existing.userId !== user.id && !isAdmin(user)) throw ctx.error("FORBIDDEN");
@@ -505,7 +509,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         } as any,
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
-            const svc = getAdapterServices(ctx, options.providers);
+            const svc = getAdapterServices(ctx.context.adapter, options.providers);
             const existing = await svc.subscriptions.getSubscription(ctx.body.subscriptionId);
             if (!existing) throw ctx.error("NOT_FOUND", { message: "Souscription introuvable" });
             if (existing.userId !== user.id && !isAdmin(user)) throw ctx.error("FORBIDDEN");
@@ -555,7 +559,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
             try {
-                const svc = getAdapterServices(ctx, options.providers);
+                const svc = getAdapterServices(ctx.context.adapter, options.providers);
                 const request = await svc.subscriptions.requestCustomSubscription(toAuditContext(user, isAdmin, ctx), {
                     requestedByUserId: user.id,
                     ...ctx.body,
@@ -592,7 +596,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
-            const svc = getAdapterServices(ctx, options.providers);
+            const svc = getAdapterServices(ctx.context.adapter, options.providers);
             const requests = await svc.subscriptions.listPendingCustomRequests();
             return ctx.json({ requests });
         },
@@ -649,7 +653,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
             try {
-                const svc = getAdapterServices(ctx, options.providers);
+                const svc = getAdapterServices(ctx.context.adapter, options.providers);
                 const subscription = await svc.subscriptions.approveCustomRequest(toAuditContext(user, isAdmin, ctx), ctx.params.id, {
                     reviewedByUserId: user.id,
                     reviewNotes: ctx.body?.reviewNotes,
@@ -700,7 +704,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
             try {
-                const svc = getAdapterServices(ctx, options.providers);
+                const svc = getAdapterServices(ctx.context.adapter, options.providers);
                 const request = await svc.subscriptions.rejectCustomRequest(toAuditContext(user, isAdmin, ctx), ctx.params.id, {
                     reviewedByUserId: user.id,
                     reviewNotes: ctx.body?.reviewNotes,
@@ -748,7 +752,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
             try {
-                const svc = getAdapterServices(ctx, options.providers);
+                const svc = getAdapterServices(ctx.context.adapter, options.providers);
                 const promo = await svc.promos.createPromoCode(toAuditContext(user, isAdmin, ctx), ctx.body);
                 return ctx.json({ promo });
             } catch (error) {
@@ -790,7 +794,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
             try {
-                const svc = getAdapterServices(ctx, options.providers);
+                const svc = getAdapterServices(ctx.context.adapter, options.providers);
                 const result = await svc.promos.validate(ctx.body.code, {
                     userId: user.id,
                     planId: ctx.body.planId,
@@ -839,7 +843,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
             try {
-                const svc = getAdapterServices(ctx, options.providers);
+                const svc = getAdapterServices(ctx.context.adapter, options.providers);
                 const partner = await svc.partners.createPartner(toAuditContext(user, isAdmin, ctx), ctx.body);
                 return ctx.json({ partner });
             } catch (error) {
@@ -886,7 +890,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
             try {
-                const svc = getAdapterServices(ctx, options.providers);
+                const svc = getAdapterServices(ctx.context.adapter, options.providers);
                 const plan = await svc.partners.createPartnerPlan(toAuditContext(user, isAdmin, ctx), ctx.params.id, ctx.body);
                 return ctx.json({ plan });
             } catch (error) {
@@ -929,7 +933,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         } as any,
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
-            const svc = getAdapterServices(ctx, options.providers);
+            const svc = getAdapterServices(ctx.context.adapter, options.providers);
             const subscription = await svc.subscriptions.getSubscription(ctx.body.subscriptionId);
             if (!subscription) throw ctx.error("NOT_FOUND", { message: "Souscription introuvable" });
             if (subscription.userId !== user.id && !isAdmin(user)) throw ctx.error("FORBIDDEN");
@@ -976,7 +980,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
             try {
-                const svc = getAdapterServices(ctx, options.providers);
+                const svc = getAdapterServices(ctx.context.adapter, options.providers);
                 const authorization = await svc.overage.authorizeOverage(toAuditContext(user, isAdmin, ctx), ctx.body);
                 return ctx.json({ authorization });
             } catch (error) {
@@ -1016,7 +1020,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
         async (ctx) => {
             const user = ctx.context.session!.user as SessionUser;
             if (!isAdmin(user)) throw ctx.error("FORBIDDEN", { message: "Droits administrateur requis" });
-            const svc = getAdapterServices(ctx, options.providers);
+            const svc = getAdapterServices(ctx.context.adapter, options.providers);
             const logs = await svc.audit.query({ action: ctx.query?.action, entityType: ctx.query?.entityType });
             return ctx.json({ logs });
         },
@@ -1031,7 +1035,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             const rawBody = await ctx.request.text();
             const headers = Object.fromEntries(ctx.headers.entries());
             try {
-                const svc = getAdapterServices(ctx, options.providers);
+                const svc = getAdapterServices(ctx.context.adapter, options.providers);
                 const event = await svc.subscriptions.handleProviderWebhook(ctx.params.provider, rawBody, headers);
                 return ctx.json({ received: true, type: event.type });
             } catch (error) {
@@ -1048,9 +1052,9 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             fields: {
                 key: { type: "string", required: true, unique: true, fieldName: "key" },
                 name: { type: "string", required: true },
-                description: { type: "string" },
+                description: { type: "string", required: false },
                 valueType: { type: "string", required: true, fieldName: "value_type" },
-                unit: { type: "string" },
+                unit: { type: "string", required: false },
                 createdAt: { type: "date", required: true, fieldName: "created_at" },
             },
         },
@@ -1060,9 +1064,9 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
                 slug: { type: "string", required: true, unique: true },
                 billingMode: { type: "string", required: true, fieldName: "billing_mode" },
                 discountPercent: { type: "number", required: true, fieldName: "discount_percent" },
-                revenueSharePercent: { type: "number", fieldName: "revenue_share_percent" },
-                contactEmail: { type: "string", fieldName: "contact_email" },
-                notes: { type: "string" },
+                revenueSharePercent: { type: "number", required: false, fieldName: "revenue_share_percent" },
+                contactEmail: { type: "string", required: false, fieldName: "contact_email" },
+                notes: { type: "string", required: false },
                 ...(enableOrganizations && {
                     organizationId: {
                         type: "string",
@@ -1081,6 +1085,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             fields: {
                 requestedByUserId: {
                     type: "string",
+                    required: false,
                     fieldName: "requested_by_user_id",
                     references: { model: "user", field: "id", onDelete: "cascade" },
                 },
@@ -1092,17 +1097,18 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
                     },
                 }),
                 requestedAdvantages: { type: "string", required: true, fieldName: "requested_advantages" },
-                proposedPriceCents: { type: "number", fieldName: "proposed_price_cents" },
-                proposedCurrency: { type: "string", fieldName: "proposed_currency" },
-                proposedInterval: { type: "string", fieldName: "proposed_interval" },
-                justification: { type: "string" },
+                proposedPriceCents: { type: "number", required: false, fieldName: "proposed_price_cents" },
+                proposedCurrency: { type: "string", required: false, fieldName: "proposed_currency" },
+                proposedInterval: { type: "string", required: false, fieldName: "proposed_interval" },
+                justification: { type: "string", required: false },
                 status: { type: "string", required: true },
                 reviewedByUserId: {
                     type: "string",
+                    required: false,
                     fieldName: "reviewed_by_user_id",
                     references: { model: "user", field: "id", onDelete: "set null" },
                 },
-                reviewNotes: { type: "string", fieldName: "review_notes" },
+                reviewNotes: { type: "string", required: false, fieldName: "review_notes" },
                 createdAt: { type: "date", required: true, fieldName: "created_at" },
                 updatedAt: { type: "date", required: true, fieldName: "updated_at" },
 
@@ -1117,7 +1123,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             fields: {
                 slug: { type: "string", required: true, unique: true },
                 name: { type: "string", required: true },
-                description: { type: "string" },
+                description: { type: "string", required: false },
                 kind: { type: "string", required: true },
                 isPublic: { type: "boolean", required: true, fieldName: "is_public" },
                 isActive: { type: "boolean", required: true, fieldName: "is_active" },
@@ -1125,24 +1131,27 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
                 partnerId: {
                     type: "string",
                     fieldName: "partner_id",
+                    required:false,
                     references: { model: "partner", field: "id", onDelete: "set null" },
                 },
                 ...(enableOrganizations && {
                     organizationId: {
                         type: "string",
                         fieldName: "organization_id",
+                        required: false,
                         references: { model: "organization", field: "id", onDelete: "cascade" },
                     },
                 }),
                 originRequestId: {
                     type: "string",
                     fieldName: "origin_request_id",
+                    required: false,
                     references: { model: "customSubscriptionRequest", field: "id", onDelete: "set null" },
                 },
                 createdAt: { type: "date", required: true, fieldName: "created_at" },
                 updatedAt: { type: "date", required: true, fieldName: "updated_at" },
             },
-
+            indexes:[]
         },
         planAdvantage: {
             fields: {
@@ -1158,10 +1167,10 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
                     fieldName: "advantage_id",
                     references: { model: "advantage", field: "id", onDelete: "cascade" },
                 },
-                value: { type: "string" },
+                value: { type: "string", required: false },
                 overageAllowed: { type: "boolean", required: true, fieldName: "overage_allowed" },
-                overageUnitPriceCents: { type: "number", fieldName: "overage_unit_price_cents" },
-                isActive: { type: "boolean", required: true, fieldName: "is_active" },
+                overageUnitPriceCents: { type: "number", required: false, fieldName: "overage_unit_price_cents" },
+                isActive: { type: "boolean", required: true, fieldName: "is_active",default:true },
                 createdAt: { type: "date", required: true, fieldName: "created_at" },
                 updatedAt: { type: "date", required: true, fieldName: "updated_at" },
             },
@@ -1175,12 +1184,15 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
             fields: {
                 userId: {
                     type: "string",
+                    required: false,
                     fieldName: "user_id",
                     references: { model: "user", field: "id", onDelete: "cascade" },
                 },
                 ...(enableOrganizations && {
                     organizationId: {
                         type: "string",
+                        required: false,
+
                         fieldName: "organization_id",
                         references: { model: "organization", field: "id", onDelete: "cascade" },
                     },
@@ -1193,8 +1205,8 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
                 },
                 status: { type: "string", required: true },
                 provider: { type: "string", required: true },
-                externalSubscriptionId: { type: "string", fieldName: "external_subscription_id" },
-                externalCustomerId: { type: "string", fieldName: "external_customer_id" },
+                externalSubscriptionId: { type: "string", required: false, fieldName: "external_subscription_id" },
+                externalCustomerId: { type: "string", required: false, fieldName: "external_customer_id" },
                 currentPeriodStart: { type: "date", required: true, fieldName: "current_period_start" },
                 currentPeriodEnd: { type: "date", required: true, fieldName: "current_period_end" },
                 cancelAtPeriodEnd: { type: "boolean", required: true, fieldName: "cancel_at_period_end" },
@@ -1202,14 +1214,21 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
                 appliedPromoCodeId: {
                     type: "string",
                     fieldName: "applied_promo_code_id",
+                    required: false,
+
                     references: { model: "promoCode", field: "id", onDelete: "set null" },
                 },
                 partnerId: {
                     type: "string",
                     fieldName: "partner_id",
+                    required: false,
+
                     references: { model: "partner", field: "id", onDelete: "set null" },
                 },
-                metadata: { type: "string" },
+                metadata: { type: "string",
+                    required: false,
+
+                },
                 createdAt: { type: "date", required: true, fieldName: "created_at" },
                 updatedAt: { type: "date", required: true, fieldName: "updated_at" },
             },
@@ -1233,9 +1252,9 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
                     fieldName: "advantage_id",
                     references: { model: "advantage", field: "id", onDelete: "cascade" },
                 },
-                value: { type: "string" },
+                value: { type: "string", required: false },
                 overageAllowed: { type: "boolean", required: true, fieldName: "overage_allowed" },
-                overageUnitPriceCents: { type: "number", fieldName: "overage_unit_price_cents" },
+                overageUnitPriceCents: { type: "number", required: false, fieldName: "overage_unit_price_cents" },
                 isActive: { type: "boolean", required: true, fieldName: "is_active" },
                 createdAt: { type: "date", required: true, fieldName: "created_at" },
                 updatedAt: { type: "date", required: true, fieldName: "updated_at" },
@@ -1252,13 +1271,13 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
                 code: { type: "string", required: true, unique: true },
                 type: { type: "string", required: true },
                 value: { type: "number", required: true },
-                currency: { type: "string" },
-                description: { type: "string" },
-                maxRedemptions: { type: "number", fieldName: "max_redemptions" },
+                currency: { type: "string", required: false },
+                description: { type: "string", required: false },
+                maxRedemptions: { type: "number", required: false, fieldName: "max_redemptions" },
                 redemptionCount: { type: "number", required: true, fieldName: "redemption_count" },
-                perUserLimit: { type: "number", fieldName: "per_user_limit" },
+                perUserLimit: { type: "number", required: false, fieldName: "per_user_limit" },
                 validFrom: { type: "date", required: true, fieldName: "valid_from" },
-                validUntil: { type: "date", fieldName: "valid_until" },
+                validUntil: { type: "date", required: false, fieldName: "valid_until" },
                 applicablePlanIds: { type: "string", required: true, fieldName: "applicable_plan_ids" },
                 applicablePartnerIds: { type: "string", required: true, fieldName: "applicable_partner_ids" },
                 isActive: { type: "boolean", required: true, fieldName: "is_active" },
@@ -1320,7 +1339,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
                     references: { model: "subscription", field: "id", onDelete: "cascade" },
                 },
                 advantageKey: { type: "string", required: true, fieldName: "advantage_key" },
-                authorizedExtraLimit: { type: "number", fieldName: "authorized_extra_limit" },
+                authorizedExtraLimit: { type: "number", required: false, fieldName: "authorized_extra_limit" },
                 reason: { type: "string", required: true },
                 authorizedByUserId: {
                     type: "string",
@@ -1328,7 +1347,7 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
                     fieldName: "authorized_by_user_id",
                     references: { model: "user", field: "id", onDelete: "restrict" },
                 },
-                expiresAt: { type: "date", fieldName: "expires_at" },
+                expiresAt: { type: "date", required: false, fieldName: "expires_at" },
                 isActive: { type: "boolean", required: true, fieldName: "is_active" },
                 createdAt: { type: "date", required: true, fieldName: "created_at" },
             },
@@ -1349,11 +1368,11 @@ export function subscriptionsPlugin(options: SubscriptionsPluginOptions): { plug
                 action: { type: "string", required: true },
                 entityType: { type: "string", required: true, fieldName: "entity_type" },
                 entityId: { type: "string", required: true, fieldName: "entity_id" },
-                before: { type: "string", nullable: true },
-                after: { type: "string", nullable: true },
-                metadata: { type: "string", nullable: true },
-                ip: { type: "string",default:"0.0.0.0" },
-                userAgent: { type: "string", fieldName: "user_agent" },
+                before: { type: "string",required:false },
+                after: { type: "string",required:false},
+                metadata: { type: "string",required:false },
+                ip: { type: "string", required: false, default:"0.0.0.0" },
+                userAgent: { type: "string", required: false, fieldName: "user_agent" },
                 createdAt: { type: "date", required: true, fieldName: "created_at" },
             },
             indexes: [

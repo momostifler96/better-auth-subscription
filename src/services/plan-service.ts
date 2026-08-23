@@ -92,7 +92,7 @@ export class PlanService {
       const created = await this.store.plans.create(plan);
 
       if (input.advantages?.length) {
-        await this.setPlanAdvantages(created.id, input.advantages);
+        created.advantages = await this.setPlanAdvantages(created.id, input.advantages);
       }
       return created;
     });
@@ -129,7 +129,7 @@ export class PlanService {
    */
   async setPlanAdvantages(
     planId: string,
-    advantages: Array<{ advantageKey: string; value: boolean | number | null; overageAllowed?: boolean; overageUnitPriceCents?: number }>,
+    advantages: Array<{ advantageKey: string; value: boolean | number | null; overageAllowed?: boolean;isActive?: boolean; overageUnitPriceCents?: number }>,
   ): Promise<PlanAdvantage[]> {
     const resolved: PlanAdvantage[] = [];
     for (const a of advantages) {
@@ -139,6 +139,7 @@ export class PlanService {
         planId,
         advantageId: advantage.id,
         value: a.value,
+        isActive: a.isActive == null ? true : a.isActive,
         overageAllowed: a.overageAllowed ?? false,
         overageUnitPriceCents: a.overageUnitPriceCents,
       });
