@@ -16,17 +16,21 @@ export const authClient = createAuthClient({
 });
 ```
 
-### 2. Utiliser avec React
+### 2. Utiliser les actions typées
 
 ```typescript
-import { useSubscriptions } from "better-subscriptions/client/react";
+const { data: plans, error } = await authClient.subscriptions.listPlans();
+const { data: mine } = await authClient.subscriptions.getMySubscription();
+```
 
-// Dans vos composants
-const { usePlans, useMySubscription } = useSubscriptions(authClient);
+### 3. Utiliser avec React
+
+```tsx
+import { usePlans, useMySubscription } from "better-subscriptions/client/react";
 
 function MyComponent() {
-  const { data: plans } = usePlans();
-  const { data: subscription } = useMySubscription();
+  const { data: plans } = usePlans(authClient);
+  const { data: mine } = useMySubscription(authClient);
   // ...
 }
 ```

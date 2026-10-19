@@ -1,28 +1,6 @@
 /**
- * Svelte plugin for better-auth subscriptions client.
- *
- * Usage:
- * ```ts
- * import { createAuthClient } from "better-auth/client";
- * import { subscriptionsPlugin } from "better-subscriptions/client/svelte";
- *
- * const authClient = createAuthClient({
- *   baseURL: "http://localhost:3000",
- *   plugins: [subscriptionsPlugin()],
- * });
- * ```
+ * Plugin client Svelte : enregistre les actions Better Auth et réexporte les
+ * stores d'abonnement.
  */
-
-export function subscriptionsPlugin() {
-  return {
-    id: "subscriptions",
-    init(client: any) {
-      return {
-        client,
-      };
-    },
-  };
-}
-
-// Re-export all stores
-export * from "./index";
+export { subscriptionsPlugin } from "../index.js";
+export * from "./index.js";

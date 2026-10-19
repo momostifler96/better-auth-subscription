@@ -67,7 +67,14 @@ export interface Subscription {
   userId?: string;
   organizationId?: string;
   planId: string;
-  status: "active" | "paused" | "canceled" | "trialing" | "expired";
+  status:
+    | "active"
+    | "paused"
+    | "canceled"
+    | "trialing"
+    | "expired"
+    | "past_due"
+    | "pending_approval";
   provider: string;
   externalSubscriptionId?: string;
   externalCustomerId?: string;
@@ -323,6 +330,17 @@ export interface SubscribePayload {
   provider?: string;
   promoCode?: string;
   quantity?: number;
+  manualProofUrl?: string;
+  manualMetadata?: Record<string, string>;
+}
+
+export interface UsageCheckResult {
+  allowed: boolean;
+  used: number;
+  planLimit: number | null;
+  authorizedExtraLimit: number | null;
+  remaining: number | null;
+  usedOverage: boolean;
 }
 
 export interface ChangePlanPayload {
@@ -419,7 +437,7 @@ export interface RecordUsagePayload {
 export interface AuthorizeOveragePayload {
   subscriptionId: string;
   advantageKey: string;
-  authorizedExtraLimit?: number;
+  authorizedExtraLimit: number | null;
   reason: string;
   expiresAt?: Date;
 }

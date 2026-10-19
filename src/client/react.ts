@@ -40,6 +40,15 @@ interface UseAsyncState<T> {
   refetch: () => Promise<void>;
 }
 
+function read<T = any>(response: any): T {
+  if (response?.error) {
+    throw new Error(
+      response.error.message ?? `Request failed${response.error.status ? ` (${response.error.status})` : ""}`,
+    );
+  }
+  return response?.data as T;
+}
+
 /**
  * Hook générique pour les appels asynchrones.
  */
@@ -76,7 +85,7 @@ function useAsync<T>(
  */
 export function usePlans(client: any) {
   return useAsync(
-    () => client.subscriptions.listPlans().then((res: any) => res.plans),
+    () => client.subscriptions.listPlans().then((response: any) => read(response).plans),
     [client],
   );
 }
@@ -97,7 +106,7 @@ export function useMySubscription(
     setIsLoading(true);
     setError(null);
     try {
-      const result = await client.subscriptions.getMySubscription();
+      const result = read<SubscriptionWithAdvantages>(await client.subscriptions.getMySubscription());
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
@@ -131,7 +140,7 @@ export function useSubscribe(client: any) {
       setIsLoading(true);
       setError(null);
       try {
-        const result = await client.subscriptions.subscribe(params);
+        const result = read(await client.subscriptions.subscribe(params));
         setData(result.subscription);
         return result.subscription;
       } catch (err) {
@@ -160,10 +169,12 @@ export function useChangePlan(client: any) {
       setIsLoading(true);
       setError(null);
       try {
-        const result = await client.subscriptions.changePlan({
-          subscriptionId,
-          newPlanId,
-        });
+        const result = read(
+          await client.subscriptions.changePlan({
+            subscriptionId,
+            newPlanId,
+          }),
+        );
         return result.subscription;
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
@@ -191,10 +202,12 @@ export function useCancelSubscription(client: any) {
       setIsLoading(true);
       setError(null);
       try {
-        const result = await client.subscriptions.cancelSubscription({
-          subscriptionId,
-          atPeriodEnd,
-        });
+        const result = read(
+          await client.subscriptions.cancelSubscription({
+            subscriptionId,
+            atPeriodEnd,
+          }),
+        );
         return result.subscription;
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
@@ -223,11 +236,13 @@ export function useValidatePromoCode(client: any) {
       setIsLoading(true);
       setError(null);
       try {
-        const result = await client.subscriptions.validatePromoCode({
-          code,
-          planId,
-          partnerId,
-        });
+        const result = read(
+          await client.subscriptions.validatePromoCode({
+            code,
+            planId,
+            partnerId,
+          }),
+        );
         setData(result.promo);
         return result.promo;
       } catch (err) {
@@ -256,11 +271,13 @@ export function useRecordUsage(client: any) {
       setIsLoading(true);
       setError(null);
       try {
-        const result = await client.subscriptions.recordUsage({
-          subscriptionId,
-          advantageKey,
-          quantity,
-        });
+        const result = read(
+          await client.subscriptions.recordUsage({
+            subscriptionId,
+            advantageKey,
+            quantity,
+          }),
+        );
         return result;
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
@@ -298,8 +315,8 @@ export function useRequestCustomSubscription(client: any) {
       setIsLoading(true);
       setError(null);
       try {
-        const result = await client.subscriptions.requestCustomSubscription(
-          params,
+        const result = read(
+          await client.subscriptions.requestCustomSubscription(params),
         );
         setData(result.request);
         return result.request;

@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "declaration": true,
+    "outDir": "dist/client",
+    "rootDir": "src/client",
+    "noEmit": false
+  },
+  "include": [
+    "src/client/index.ts",
+    "src/client/react.ts",
+    "src/client/types.ts",
+    "src/client/vue/index.ts",
+    "src/client/vue/plugin.ts",
+    "src/client/svelte/index.ts",
+    "src/client/svelte/plugin.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

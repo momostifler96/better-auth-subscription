@@ -94,6 +94,11 @@ export class OverageService {
    */
   async recordUsage(ctx: AuditContext, input: RecordUsageInput): Promise<UsageCheckResult> {
     const subscription = await this.mustGetSubscription(input.subscriptionId);
+    if (subscription.status !== "active" && subscription.status !== "trialing") {
+      throw new BadRequestError(
+        `La souscription ${input.subscriptionId} n'est pas active (statut: ${subscription.status})`,
+      );
+    }
     const advantage = await this.assertQuantityAdvantage(input.advantageKey);
 
     return this.audit.wrap(

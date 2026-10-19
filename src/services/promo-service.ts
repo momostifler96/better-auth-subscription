@@ -43,6 +43,18 @@ export class PromoService {
     if (existing) throw new AlreadyExistsError("PromoCode", "code", code);
     if (input.type === "fixed" && !input.currency) throw new ValidationError('Une devise est requise pour un code promo de type "fixed"', { type: "fixed", hasCurrency: false });
     if (input.value <= 0) throw new ValidationError("La valeur du code promo doit être positive", { value: input.value });
+    if (input.type === "percent" && input.value > 100) {
+      throw new ValidationError("Une remise en pourcentage ne peut pas dépasser 100", { value: input.value });
+    }
+    if ((input.type === "free_period" || input.type === "trial_extension") && input.value > 3650) {
+      throw new ValidationError("La durée d'un code promo ne peut pas dépasser 3650 jours", { value: input.value });
+    }
+    if (input.validFrom && input.validUntil && input.validUntil <= input.validFrom) {
+      throw new ValidationError("validUntil doit être postérieur à validFrom", {
+        validFrom: input.validFrom,
+        validUntil: input.validUntil,
+      });
+    }
 
     return this.audit.wrap(ctx, { action: "promo_code.create", entityType: "promo_code", entityId: code }, async () => {
       const promo: Omit<PromoCode, "id"> = {
@@ -88,7 +100,7 @@ export class PromoService {
     if (promo.validFrom > now) throw new ValidationError(`Le code promo "${promo.code}" n'est pas encore valide`, { code: promo.code, validFrom: promo.validFrom });
     if (promo.validUntil && promo.validUntil < now) throw new ValidationError(`Le code promo "${promo.code}" a expiré`, { code: promo.code, validUntil: promo.validUntil });
 
-    if (promo.maxRedemptions !== undefined && promo.redemptionCount >= promo.maxRedemptions) {
+    if (promo.maxRedemptions != null && promo.redemptionCount >= promo.maxRedemptions) {
       throw new ValidationError(`Le code promo "${promo.code}" a atteint son nombre maximal d'utilisations`, { code: promo.code, maxRedemptions: promo.maxRedemptions, count: promo.redemptionCount });
     }
 
@@ -99,7 +111,7 @@ export class PromoService {
       throw new BadRequestError(`Le code promo "${promo.code}" n'est pas applicable à ce partenaire`, { code: promo.code, partnerId: context.partnerId });
     }
 
-    if (promo.perUserLimit !== undefined) {
+    if (promo.perUserLimit != null) {
       const used = await this.store.promoCodes.countRedemptionsForUser(promo.id, context.userId);
       if (used >= promo.perUserLimit) {
         throw new ValidationError(`Le code promo "${promo.code}" a déjà été utilisé le nombre maximal de fois par cet utilisateur`, { code: promo.code, perUserLimit: promo.perUserLimit, used });

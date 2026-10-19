@@ -76,8 +76,8 @@ import type {
 ### `index.ts`
 
 Exports :
-- `subscriptionsPlugin()` - Plugin à passer à `createAuthClient`
-- `useSubscriptions(client)` - Wrapper pour les appels API avec types
+- `subscriptionsPlugin()` - Plugin à passer à `createAuthClient`; enregistre les actions `authClient.subscriptions.*`
+- `useSubscriptions(client)` - Wrapper utilitaire qui déballe `{ data, error }`
 
 ### `react.ts`
 

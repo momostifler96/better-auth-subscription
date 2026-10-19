@@ -1,10 +1,37 @@
 /**
- * Svelte client for subscriptions plugin.
- * Provides stores for accessing subscription features.
+ * Stores Svelte pour le plugin subscriptions.
+ *
+ * Ils consomment les actions enregistrées par `subscriptionsPlugin()`.
  */
 
-import { writable, readable, derived } from "svelte/store";
-import type { Readable, Writable } from "svelte/store";
+import { derived, writable } from "svelte/store";
+import type { Readable } from "svelte/store";
+import type { ClientResponse, SubscriptionsClientActions } from "../index.js";
+import type {
+  CustomSubscriptionRequest,
+  Plan,
+  PromoCode,
+  RequestCustomSubscriptionPayload,
+  SubscribePayload,
+  Subscription,
+  SubscriptionWithAdvantages,
+  UsageCheckResult,
+} from "../types.js";
+
+export { subscriptionsPlugin } from "../index.js";
+
+type SubscriptionsClient = {
+  subscriptions: SubscriptionsClientActions["subscriptions"];
+};
+
+function read<T>(response: ClientResponse<T>): T {
+  if (response.error) {
+    throw new Error(
+      response.error.message ?? `Request failed${response.error.status ? ` (${response.error.status})` : ""}`,
+    );
+  }
+  return response.data as T;
+}
 
 export interface AsyncStore<T> {
   data: Readable<T | null>;
@@ -13,11 +40,8 @@ export interface AsyncStore<T> {
   refetch?: () => Promise<void>;
 }
 
-/**
- * Fetch plans from the server.
- */
-export function createPlansStore(client: any): AsyncStore<any[]> {
-  const data = writable<any[] | null>(null);
+export function createPlansStore(client: SubscriptionsClient): AsyncStore<Plan[]> {
+  const data = writable<Plan[] | null>(null);
   const isLoading = writable(false);
   const error = writable<Error | null>(null);
 
@@ -25,10 +49,8 @@ export function createPlansStore(client: any): AsyncStore<any[]> {
     isLoading.set(true);
     error.set(null);
     try {
-      const response = await (client as any).$fetch("/subscriptions/plans", {
-        method: "GET",
-      });
-      data.set(response.plans || []);
+      const response = read(await client.subscriptions.listPlans());
+      data.set(response.plans ?? []);
     } catch (err) {
       error.set(err instanceof Error ? err : new Error(String(err)));
     } finally {
@@ -36,8 +58,7 @@ export function createPlansStore(client: any): AsyncStore<any[]> {
     }
   };
 
-  // Auto-fetch on creation
-  fetch();
+  void fetch();
 
   return {
     data: derived(data, ($data) => $data),
@@ -47,12 +68,8 @@ export function createPlansStore(client: any): AsyncStore<any[]> {
   };
 }
 
-/**
- * Get current user's active subscription with advantages.
- */
-export function createSubscriptionStore(client: any) {
-  const subscription = writable<any | null>(null);
-  const advantages = writable<any[]>([]);
+export function createSubscriptionStore(client: SubscriptionsClient) {
+  const data = writable<SubscriptionWithAdvantages | null>(null);
   const isLoading = writable(false);
   const error = writable<Error | null>(null);
 
@@ -60,11 +77,7 @@ export function createSubscriptionStore(client: any) {
     isLoading.set(true);
     error.set(null);
     try {
-      const response = await (client as any).$fetch("/subscriptions/my-subscription", {
-        method: "GET",
-      });
-      subscription.set(response.subscription);
-      advantages.set(response.advantages || []);
+      data.set(read(await client.subscriptions.getMySubscription()));
     } catch (err) {
       error.set(err instanceof Error ? err : new Error(String(err)));
     } finally {
@@ -72,41 +85,28 @@ export function createSubscriptionStore(client: any) {
     }
   };
 
-  // Auto-fetch on creation
-  fetch();
+  void fetch();
 
   return {
-    subscription: derived(subscription, ($sub) => $sub),
-    advantages: derived(advantages, ($adv) => $adv),
+    data: derived(data, ($data) => $data),
+    subscription: derived(data, ($data): Subscription | null => $data?.subscription ?? null),
+    advantages: derived(data, ($data) => $data?.advantages ?? []),
     isLoading: derived(isLoading, ($loading) => $loading),
     error: derived(error, ($error) => $error),
     refetch: fetch,
   };
 }
 
-/**
- * Subscribe to a plan.
- */
-export function createSubscribeStore(client: any) {
-  const subscription = writable<any | null>(null);
+export function createSubscribeStore(client: SubscriptionsClient) {
+  const subscription = writable<Subscription | null>(null);
   const isLoading = writable(false);
   const error = writable<Error | null>(null);
 
-  const subscribe = async (input: {
-    planId: string;
-    provider?: string;
-    promoCode?: string;
-    quantity?: number;
-    manualProofUrl?: string;
-    manualMetadata?: Record<string, unknown>;
-  }) => {
+  const subscribe = async (input: SubscribePayload) => {
     isLoading.set(true);
     error.set(null);
     try {
-      const response = await (client as any).$fetch("/subscriptions/subscribe", {
-        method: "POST",
-        body: input,
-      });
+      const response = read(await client.subscriptions.subscribe(input));
       subscription.set(response.subscription);
       return response.subscription;
     } catch (err) {
@@ -120,16 +120,13 @@ export function createSubscribeStore(client: any) {
 
   return {
     subscribe,
-    subscription: derived(subscription, ($sub) => $sub),
+    subscription: derived(subscription, ($subscription) => $subscription),
     isLoading: derived(isLoading, ($loading) => $loading),
     error: derived(error, ($error) => $error),
   };
 }
 
-/**
- * Change subscription plan.
- */
-export function createChangePlanStore(client: any) {
+export function createChangePlanStore(client: SubscriptionsClient) {
   const isLoading = writable(false);
   const error = writable<Error | null>(null);
 
@@ -137,11 +134,7 @@ export function createChangePlanStore(client: any) {
     isLoading.set(true);
     error.set(null);
     try {
-      const response = await (client as any).$fetch("/subscriptions/change-plan", {
-        method: "POST",
-        body: { subscriptionId, newPlanId },
-      });
-      return response.subscription;
+      return read(await client.subscriptions.changePlan({ subscriptionId, newPlanId })).subscription;
     } catch (err) {
       const errorObj = err instanceof Error ? err : new Error(String(err));
       error.set(errorObj);
@@ -158,21 +151,17 @@ export function createChangePlanStore(client: any) {
   };
 }
 
-/**
- * Cancel subscription.
- */
-export function createCancelSubscriptionStore(client: any) {
+export function createCancelSubscriptionStore(client: SubscriptionsClient) {
   const isLoading = writable(false);
   const error = writable<Error | null>(null);
 
-  const cancel = async (subscriptionId: string, atPeriodEnd: boolean = true) => {
+  const cancel = async (subscriptionId: string, atPeriodEnd = true) => {
     isLoading.set(true);
     error.set(null);
     try {
-      await (client as any).$fetch("/subscriptions/cancel-subscription", {
-        method: "POST",
-        body: { subscriptionId, atPeriodEnd },
-      });
+      return read(
+        await client.subscriptions.cancelSubscription({ subscriptionId, atPeriodEnd }),
+      ).subscription;
     } catch (err) {
       const errorObj = err instanceof Error ? err : new Error(String(err));
       error.set(errorObj);
@@ -189,11 +178,8 @@ export function createCancelSubscriptionStore(client: any) {
   };
 }
 
-/**
- * Validate promo code.
- */
-export function createValidatePromoCodeStore(client: any) {
-  const data = writable<any | null>(null);
+export function createValidatePromoCodeStore(client: SubscriptionsClient) {
+  const data = writable<PromoCode | null>(null);
   const isLoading = writable(false);
   const error = writable<Error | null>(null);
 
@@ -201,12 +187,11 @@ export function createValidatePromoCodeStore(client: any) {
     isLoading.set(true);
     error.set(null);
     try {
-      const response = await (client as any).$fetch("/subscriptions/validate-promo-code", {
-        method: "POST",
-        body: { code, planId, partnerId },
-      });
-      data.set(response);
-      return response;
+      const response = read(
+        await client.subscriptions.validatePromoCode({ code, planId, partnerId }),
+      );
+      data.set(response.promo);
+      return response.promo;
     } catch (err) {
       const errorObj = err instanceof Error ? err : new Error(String(err));
       error.set(errorObj);
@@ -224,10 +209,8 @@ export function createValidatePromoCodeStore(client: any) {
   };
 }
 
-/**
- * Record usage for a subscription advantage.
- */
-export function createRecordUsageStore(client: any) {
+export function createRecordUsageStore(client: SubscriptionsClient) {
+  const result = writable<UsageCheckResult | null>(null);
   const isLoading = writable(false);
   const error = writable<Error | null>(null);
 
@@ -235,10 +218,11 @@ export function createRecordUsageStore(client: any) {
     isLoading.set(true);
     error.set(null);
     try {
-      await (client as any).$fetch("/subscriptions/record-usage", {
-        method: "POST",
-        body: { subscriptionId, advantageKey, quantity },
-      });
+      const response = read(
+        await client.subscriptions.recordUsage({ subscriptionId, advantageKey, quantity }),
+      );
+      result.set(response);
+      return response;
     } catch (err) {
       const errorObj = err instanceof Error ? err : new Error(String(err));
       error.set(errorObj);
@@ -250,10 +234,41 @@ export function createRecordUsageStore(client: any) {
 
   return {
     record,
+    result: derived(result, ($result) => $result),
     isLoading: derived(isLoading, ($loading) => $loading),
     error: derived(error, ($error) => $error),
   };
 }
 
-// Re-export store types
+export function createRequestCustomSubscriptionStore(client: SubscriptionsClient) {
+  const data = writable<{ request: CustomSubscriptionRequest } | null>(null);
+  const isLoading = writable(false);
+  const error = writable<Error | null>(null);
+
+  const request = async (input: RequestCustomSubscriptionPayload) => {
+    isLoading.set(true);
+    error.set(null);
+    try {
+      const response = read(
+        await client.subscriptions.requestCustomSubscription(input),
+      );
+      data.set(response);
+      return response.request;
+    } catch (err) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      error.set(errorObj);
+      throw errorObj;
+    } finally {
+      isLoading.set(false);
+    }
+  };
+
+  return {
+    request,
+    data: derived(data, ($data) => $data),
+    isLoading: derived(isLoading, ($loading) => $loading),
+    error: derived(error, ($error) => $error),
+  };
+}
+
 export type { Readable, Writable } from "svelte/store";

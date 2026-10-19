@@ -28,10 +28,10 @@ A comprehensive subscription management system for Better Auth featuring:
 - `GET /subscriptions/plans/:slug` - Get plan by slug
 
 #### Subscription Management
-- `GET /subscriptions/my-subscription` - Get current user's subscription
+- `GET /subscriptions/me` - Get current user's subscription
 - `POST /subscriptions/subscribe` - Subscribe to plan
 - `POST /subscriptions/change-plan` - Change to different plan
-- `POST /subscriptions/cancel-subscription` - Cancel subscription
+- `POST /subscriptions/cancel` - Cancel subscription
 
 #### Advantages System
 - `GET /subscriptions/advantages` - List all advantages
@@ -46,14 +46,14 @@ A comprehensive subscription management system for Better Auth featuring:
 
 #### Promo Codes
 - `POST /subscriptions/promo-code` - Create promo code (admin)
-- `POST /subscriptions/validate-promo-code` - Validate code
+- `POST /subscriptions/promo-codes/validate` - Validate code
 
 #### Partner Management
 - `POST /subscriptions/partners` - Create partner (admin)
 - `POST /subscriptions/partners/:id/plans` - Create partner plan (admin)
 
 #### Usage & Overage
-- `POST /subscriptions/record-usage` - Record usage
+- `POST /subscriptions/usage/record` - Record usage
 - `POST /subscriptions/authorize-overage` - Authorize overage (admin)
 
 #### Admin Features

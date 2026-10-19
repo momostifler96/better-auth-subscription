@@ -25,6 +25,17 @@ export interface SubscribeInput {
   manualProofUrl?: string;
   /** Manual provider only: optional metadata (developer configurable) */
   manualMetadata?: Record<string, unknown>;
+  /** Interne : contourne l'approbation manuelle (ex. demande custom déjà revue par un admin). */
+  skipManualApproval?: boolean;
+}
+
+export interface SubscriptionServiceOptions {
+  /**
+   * Si true, une souscription payante via le provider `manual` reste en
+   * `pending_approval` jusqu'à validation par un administrateur.
+   * Les plans partenaires gratuits restent activés immédiatement.
+   */
+  requireManualApproval?: boolean;
 }
 
 export interface CustomSubscriptionRequestInput {
@@ -58,6 +69,7 @@ export class SubscriptionService {
     private readonly providers: PaymentProviderRegistry,
     private readonly plans: PlanService,
     private readonly promos: PromoService,
+    private readonly options: SubscriptionServiceOptions = {},
   ) {}
 
   // ---- Souscription standard -------------------------------------------
@@ -75,6 +87,11 @@ export class SubscriptionService {
         const isPartnerFree = partner?.billingMode === "free";
 
         const providerKey: ProviderKey = isPartnerFree ? "manual" : input.provider ?? plan.prices[0]?.provider ?? this.providers.getDefault().key;
+        const requiresApproval =
+          !isPartnerFree &&
+          !input.skipManualApproval &&
+          providerKey === "manual" &&
+          (this.options.requireManualApproval ?? false);
         const provider = this.providers.get(providerKey);
         const price = plan.prices.find((p) => p.provider === providerKey);
         if (!isPartnerFree && providerKey !== "manual" && !price) {
@@ -116,7 +133,7 @@ export class SubscriptionService {
         const subscription: Omit<Subscription, "id"> = {
           userId: input.userId,
           planId: plan.id,
-          status: providerSub.status === "active" ? "active" : "trialing",
+          status: requiresApproval ? "pending_approval" : providerSub.status === "active" ? "active" : "trialing",
           provider: providerKey,
           externalSubscriptionId: providerSub.externalSubscriptionId,
           externalCustomerId: providerSub.externalCustomerId,
@@ -125,12 +142,14 @@ export class SubscriptionService {
           cancelAtPeriodEnd: false,
           advantageOverrides: [],
           partnerId: plan.partnerId,
+          ...(requiresApproval && promoValidation ? { appliedPromoCodeId: promoValidation.promo.id } : {}),
           createdAt: now,
           updatedAt: now,
         };
         const created = await this.store.subscriptions.create(subscription);
 
-        if (promoValidation) {
+        // Un paiement manuel en attente ne consomme le code promo qu'à l'approbation.
+        if (promoValidation && !requiresApproval) {
           await this.promos.redeem(ctx, { promoCodeId: promoValidation.promo.id, userId: input.userId, subscriptionId: created.id });
           await this.store.subscriptions.update(created.id, { appliedPromoCodeId: promoValidation.promo.id });
           created.appliedPromoCodeId = promoValidation.promo.id;
@@ -143,6 +162,9 @@ export class SubscriptionService {
 
   async changePlan(ctx: AuditContext, subscriptionId: string, newPlanId: string): Promise<Subscription> {
     const sub = await this.mustGetSubscription(subscriptionId);
+    if (sub.status === "pending_approval") {
+      throw new BadRequestError("Souscription en attente d'approbation : elle ne peut pas être modifiée");
+    }
     const newPlan = await this.plans.getPlan(newPlanId);
     if (!newPlan) throw new NotFoundError("Plan", newPlanId);
     return this.audit.wrap(
@@ -164,6 +186,9 @@ export class SubscriptionService {
 
   async cancel(ctx: AuditContext, subscriptionId: string, opts?: { atPeriodEnd?: boolean }): Promise<Subscription> {
     const sub = await this.mustGetSubscription(subscriptionId);
+    if (sub.status === "pending_approval") {
+      throw new BadRequestError("Souscription en attente d'approbation : utilisez l'endpoint de rejet");
+    }
     const atPeriodEnd = opts?.atPeriodEnd ?? true;
     return this.audit.wrap(
       ctx,
@@ -186,6 +211,81 @@ export class SubscriptionService {
 
   async getActiveForUser(userId: string): Promise<Subscription | null> {
     return this.store.subscriptions.findActiveForUser(userId);
+  }
+
+  /** Dernière souscription, y compris `pending_approval` (utile pour /me). */
+  async getLatestForUser(userId: string): Promise<Subscription | null> {
+    return this.store.subscriptions.findLatestForUser(userId);
+  }
+
+  async listPendingSubscriptions(): Promise<Subscription[]> {
+    return this.store.subscriptions.listPending();
+  }
+
+  /**
+   * Active une souscription manuelle en attente (admin). Idempotent si déjà
+   * active. Le code promo éventuellement réservé est consommé à ce moment-là.
+   */
+  async approveManualSubscription(
+    ctx: AuditContext,
+    subscriptionId: string,
+    review: { reviewNotes?: string } = {},
+  ): Promise<Subscription> {
+    const sub = await this.mustGetSubscription(subscriptionId);
+    if (sub.provider !== "manual") {
+      throw new BadRequestError(`La souscription ${subscriptionId} n'utilise pas le provider manual`);
+    }
+    if (sub.status === "active") return sub;
+    if (sub.status !== "pending_approval") {
+      throw new BadRequestError(`La souscription ${subscriptionId} n'est pas en attente d'approbation (statut: ${sub.status})`);
+    }
+
+    return this.audit.wrap(
+      ctx,
+      {
+        action: "subscription.approve_manual",
+        entityType: "subscription",
+        entityId: sub.id,
+        before: sub,
+        metadata: { reviewNotes: review.reviewNotes },
+      },
+      async () => {
+        if (sub.appliedPromoCodeId) {
+          const promo = await this.store.promoCodes.findById(sub.appliedPromoCodeId);
+          if (promo) {
+            await this.promos.redeem(ctx, {
+              promoCodeId: promo.id,
+              userId: sub.userId,
+              subscriptionId: sub.id,
+            });
+          }
+        }
+        return this.store.subscriptions.update(sub.id, { status: "active" });
+      },
+    );
+  }
+
+  async rejectManualSubscription(
+    ctx: AuditContext,
+    subscriptionId: string,
+    review: { reason?: string } = {},
+  ): Promise<Subscription> {
+    const sub = await this.mustGetSubscription(subscriptionId);
+    if (sub.status === "canceled") return sub;
+    if (sub.status !== "pending_approval") {
+      throw new BadRequestError(`La souscription ${subscriptionId} n'est pas en attente d'approbation (statut: ${sub.status})`);
+    }
+    return this.audit.wrap(
+      ctx,
+      {
+        action: "subscription.reject_manual",
+        entityType: "subscription",
+        entityId: sub.id,
+        before: sub,
+        metadata: { reason: review.reason },
+      },
+      () => this.store.subscriptions.update(sub.id, { status: "canceled" }),
+    );
   }
 
   private async mustGetSubscription(id: string): Promise<Subscription> {
@@ -257,6 +357,9 @@ export class SubscriptionService {
       ctx,
       { action: "custom_request.create", entityType: "custom_subscription_request", entityId: input.requestedByUserId },
       async () => {
+        for (const advantage of input.requestedAdvantages) {
+          await this.plans.validateAdvantageValue(advantage.advantageKey, advantage.value);
+        }
         const now = new Date();
         const request: Omit<CustomSubscriptionRequest, "id"> = {
           requestedByUserId: input.requestedByUserId,
@@ -306,6 +409,8 @@ export class SubscriptionService {
           userId: request.requestedByUserId,
           planId: plan.id,
           provider: review.price?.provider ?? "manual",
+          // La revue admin vaut validation : pas de seconde approbation manuelle.
+          skipManualApproval: true,
         });
 
         await this.store.customRequests.update(requestId, {
@@ -324,6 +429,12 @@ export class SubscriptionService {
   async rejectCustomRequest(ctx: AuditContext, requestId: string, review: { reviewedByUserId: string; reviewNotes?: string }): Promise<CustomSubscriptionRequest> {
     const request = await this.store.customRequests.findById(requestId);
     if (!request) throw new NotFoundError("CustomSubscriptionRequest", requestId);
+    if (request.status !== "pending") {
+      throw new BadRequestError(`Demande ${requestId} déjà traitée (statut: ${request.status})`, {
+        requestId,
+        status: request.status,
+      });
+    }
     return this.audit.wrap(
       ctx,
       { action: "custom_request.reject", entityType: "custom_subscription_request", entityId: requestId, before: request },

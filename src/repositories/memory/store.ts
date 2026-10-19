@@ -103,11 +103,12 @@ class MemoryPlanRepository implements PlanRepository {
   async findBySlug(slug: string) {
     return [...this.rows.values()].find((p) => p.slug === slug) ?? null;
   }
-  async list(filter?: { kind?: Plan["kind"]; partnerId?: string; isPublic?: boolean }) {
+  async list(filter?: { kind?: Plan["kind"]; partnerId?: string; isPublic?: boolean; isActive?: boolean }) {
     return [...this.rows.values()].filter((p) => {
       if (filter?.kind && p.kind !== filter.kind) return false;
       if (filter?.partnerId && p.partnerId !== filter.partnerId) return false;
       if (filter?.isPublic !== undefined && p.isPublic !== filter.isPublic) return false;
+      if (filter?.isActive !== undefined && p.isActive !== filter.isActive) return false;
       return true;
     });
   }
@@ -152,8 +153,18 @@ class MemorySubscriptionRepository implements SubscriptionRepository {
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0] ?? null
     );
   }
+  async findLatestForUser(userId: string) {
+    return (
+      [...this.rows.values()]
+        .filter((s) => s.userId === userId)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0] ?? null
+    );
+  }
   async listForUser(userId: string) {
     return [...this.rows.values()].filter((s) => s.userId === userId);
+  }
+  async listPending() {
+    return [...this.rows.values()].filter((s) => s.status === "pending_approval");
   }
 }
 

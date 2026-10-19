@@ -68,25 +68,42 @@ const providers = new PaymentProviderRegistry()
   )
   .register(new ManualPaymentProvider()); // requis pour les plans partenaires gratuits et le custom hors-ligne
 
-const { plugin: subscriptions, services } = subscriptionsPlugin({
+const { plugin: subscriptions } = subscriptionsPlugin({
   providers,
   isAdmin: (user) => user.role === "admin", // adaptez à votre modèle de rôles
-  // store: monStoreDrizzle, // par défaut : store mémoire (dev uniquement)
+  // true par défaut : une souscription payante via "manual" reste
+  // pending_approval jusqu'à validation admin. Mettez false uniquement si
+  // vous vérifiez les paiements hors-bande par un autre moyen.
+  requireManualApproval: true,
 });
 
 export const auth = betterAuth({
-  // ... votre config Better Auth existante
+  // ... votre config Better Auth existante (database: db)
   plugins: [subscriptions],
 });
 
-// `services` expose PlanService, PromoService, PartnerService, SubscriptionService,
-// OverageService et AuditService pour vos scripts d'admin / jobs planifiés.
-export const subscriptionServices = services;
+// Les endpoints utilisent l'adapter de la base configurée sur betterAuth.
+// Pour un script d'admin / un job, construisez les services sur le même adapter :
+//
+// import { createSubscriptionServicesWithAdapter } from "better-subscriptions";
+// const ctx = await auth.$context;
+// const services = createSubscriptionServicesWithAdapter(ctx.adapter, providers);
+//
+// Le store mémoire par défaut (`subscriptionsPlugin().services`) ne voit pas
+// les données de la base : ne l'utilisez pas pour des scripts en production.
 ```
 
 ### Persistance en production
 
-Un store 100% mémoire est fourni pour le développement et les tests (`createMemoryStore()`), mais il ne survit pas à un redémarrage. Pour la production, implémentez `SubscriptionStore` (voir `src/repositories/interfaces.ts`) — par exemple avec Drizzle, en vous appuyant sur le schéma Postgres de référence fourni dans `src/schema/drizzle.ts` — et passez-le via `subscriptionsPlugin({ store: monStore, providers })`.
+Les endpoints du plugin utilisent l'adapter Better Auth (`ctx.context.adapter`) :
+il suffit donc de configurer `database` sur `betterAuth` (SQLite, Postgres, MySQL,
+Drizzle, Prisma, Kysely…). Le store mémoire (`createMemoryStore()`) et l'option
+`store` restent disponibles pour des services utilisés hors HTTP (démo, tests),
+mais **ne partagent pas l'état de la base**. Pour un script ou un job, utilisez
+`createSubscriptionServicesWithAdapter((await auth.$context).adapter, providers)`.
+
+Le schéma Drizzle de référence s'importe explicitement :
+`import { ... } from "better-subscriptions/schema/drizzle"`.
 
 ## Endpoints exposés
 
@@ -94,13 +111,19 @@ Toutes les routes sont préfixées par le chemin de base de Better Auth (`/api/a
 
 | Méthode | Chemin | Accès | Description |
 |---|---|---|---|
-| GET | `/subscriptions/plans` | public | Catalogue des plans publics |
+| GET | `/subscriptions/plans` | public | Catalogue des plans publics et actifs |
 | POST | `/subscriptions/plans` | admin | Créer un plan (standard/custom/partner) avec sa sélection d'avantages |
+| PATCH | `/subscriptions/plans/:slug` | admin | Modifier un plan, y compris `isActive` |
 | POST | `/subscriptions/advantages` | admin | Créer un avantage réutilisable (booléen ou quantité) |
-| GET | `/subscriptions/me` | utilisateur | Souscription active + avantages effectifs |
+| GET | `/subscriptions/advantages` | admin | Lister les avantages |
+| PATCH | `/subscriptions/advantages/:key` | admin | Modifier un avantage |
+| GET | `/subscriptions/me` | utilisateur | Dernière souscription (active, pending ou annulée) + avantages effectifs |
 | POST | `/subscriptions/subscribe` | utilisateur | Souscrire à un plan (provider + code promo au choix) |
 | POST | `/subscriptions/change-plan` | utilisateur/admin | Changer de plan |
 | POST | `/subscriptions/cancel` | utilisateur/admin | Annuler (immédiatement ou en fin de période) |
+| GET | `/subscriptions/pending` | admin | Lister les souscriptions manuelles en attente |
+| POST | `/subscriptions/:id/approve` | admin | Approuver une souscription manuelle |
+| POST | `/subscriptions/:id/reject` | admin | Rejeter une souscription manuelle |
 | POST | `/subscriptions/custom-requests` | utilisateur | Demander une souscription personnalisée |
 | GET | `/subscriptions/custom-requests/pending` | admin | Lister les demandes en attente |
 | POST | `/subscriptions/custom-requests/:id/approve` | admin | Approuver → provisionne plan + souscription |
@@ -113,6 +136,41 @@ Toutes les routes sont préfixées par le chemin de base de Better Auth (`/api/a
 | POST | `/subscriptions/overage/authorize` | admin | Autoriser un dépassement (motif obligatoire) |
 | GET | `/subscriptions/audit-logs` | admin | Consulter le journal d'audit |
 | POST | `/subscriptions/webhooks/:provider` | public (signature vérifiée) | Webhook Stripe/Paddle/Lemon Squeezy |
+
+## Client front (React / Vue / Svelte)
+
+Le plugin client enregistre des actions typées sur `authClient.subscriptions.*` :
+
+```ts
+import { createAuthClient } from "better-auth/react";
+import { subscriptionsPlugin } from "better-subscriptions/client";
+
+export const authClient = createAuthClient({
+  plugins: [subscriptionsPlugin()],
+});
+
+const { data, error } = await authClient.subscriptions.listPlans();
+```
+
+En Vue :
+
+```ts
+import { createAuthClient } from "better-auth/vue";
+import { subscriptionsPlugin, useMySubscription } from "better-subscriptions/client/vue";
+
+const authClient = createAuthClient({ plugins: [subscriptionsPlugin()] });
+
+export default {
+  setup() {
+    const mine = useMySubscription(authClient);
+    return { mine };
+  },
+};
+```
+
+Les sous-chemins `better-subscriptions/client`, `/client/react`, `/client/vue`,
+`/client/svelte`, `/client/types`, `/providers/*` et `/schema/drizzle` sont
+exportés par le package. React/Vue/Svelte sont des peer dependencies optionnelles.
 
 ## Ajouter un provider de paiement
 
@@ -127,8 +185,23 @@ npm run demo      # exécute scripts/demo.ts : plans, promo, souscription person
 npm run typecheck # tsc --noEmit
 ```
 
+## Test E2E navigateur
+
+Deux applications de test sont fournies :
+
+- [`e2e/`](./e2e) : app React complète (Better Auth + SQLite + parcours admin/utilisateur).
+- [`vue-e2e/`](./vue-e2e) : petite app Vue 3 qui consomme le package via ses exports
+  (`better-subscriptions/client/vue`) et teste le flux manuel sécurisé
+  (souscription `pending_approval` → approbation admin → activation).
+
+Voir les README de chaque dossier pour le démarrage et les comptes de test.
+
 ## Notes de sécurité
 
+- Les souscriptions payantes via le provider `manual` restent en `pending_approval` par défaut : une `manualProofUrl` déclarative ne suffit pas à obtenir les avantages. Un admin doit appeler `/subscriptions/:id/approve`.
+- Les plans `custom` privés ne sont accessibles qu'à l'auteur de la demande d'origine (ou à un admin), à la souscription comme au changement de plan.
+- `manualProofUrl` est limitée aux URL HTTPS et aux data URLs image/PDF ; `manualMetadata` est un map plat de chaînes borné.
+- Les valeurs d'avantages sont validées contre leur type (`boolean` vs `quantity`) et les dépassements ne sont autorisés que sur les avantages quantitatifs.
 - Le journal d'audit est **append-only** : aucune méthode d'update/delete n'existe sur `AuditLogRepository.append`.
 - Toute tentative de mutation sensible est journalisée même en cas d'échec (`AuditService.wrap` capture l'erreur avant de la relancer).
 - Aucun dépassement d'usage n'est jamais autorisé implicitement : `OverageService.recordUsage` exige une `OverageAuthorization` active et suffisante, sinon il lève une erreur bloquante.

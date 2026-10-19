@@ -117,8 +117,41 @@ export class PlanService {
     return this.store.plans.findById(planId);
   }
 
-  async listPlans(filter?: { kind?: PlanKind; partnerId?: string; isPublic?: boolean }): Promise<Plan[]> {
+  async listPlans(filter?: { kind?: PlanKind; partnerId?: string; isPublic?: boolean; isActive?: boolean }): Promise<Plan[]> {
     return this.store.plans.list(filter);
+  }
+
+  /**
+   * Valide qu'une valeur correspond au type d'un avantage existant.
+   * Utilisé par la création de plan ET par les demandes personnalisées.
+   */
+  async validateAdvantageValue(advantageKey: string, value: boolean | number | null): Promise<Advantage> {
+    const advantage = await this.store.advantages.findByKey(advantageKey);
+    if (!advantage) throw new NotFoundError("Advantage", advantageKey);
+
+    if (advantage.valueType === "boolean" && value !== null && typeof value !== "boolean") {
+      throw new ValidationError(`L'avantage "${advantageKey}" est de type boolean`, {
+        advantageKey,
+        expectedType: "boolean",
+        actualType: typeof value,
+      });
+    }
+    if (advantage.valueType === "quantity") {
+      if (value !== null && typeof value !== "number") {
+        throw new ValidationError(`L'avantage "${advantageKey}" est de type quantity`, {
+          advantageKey,
+          expectedType: "quantity",
+          actualType: typeof value,
+        });
+      }
+      if (typeof value === "number" && (!Number.isFinite(value) || value < 0)) {
+        throw new ValidationError(`La valeur de l'avantage "${advantageKey}" doit être un nombre positif ou nul`, {
+          advantageKey,
+          value,
+        });
+      }
+    }
+    return advantage;
   }
 
   /**
@@ -133,8 +166,19 @@ export class PlanService {
   ): Promise<PlanAdvantage[]> {
     const resolved: PlanAdvantage[] = [];
     for (const a of advantages) {
-      const advantage = await this.store.advantages.findByKey(a.advantageKey);
-      if (!advantage) throw new ValidationError(`Unknown advantage: "${a.advantageKey}". Create it first via createAdvantage()`, { advantageKey: a.advantageKey });
+      const advantage = await this.validateAdvantageValue(a.advantageKey, a.value);
+      if (a.overageAllowed && advantage.valueType !== "quantity") {
+        throw new ValidationError(
+          `L'avantage "${a.advantageKey}" est de type boolean : le dépassement ne s'applique pas`,
+          { advantageKey: a.advantageKey },
+        );
+      }
+      if (a.overageUnitPriceCents != null && !a.overageAllowed) {
+        throw new ValidationError(
+          `Un prix de dépassement ne peut être défini que si overageAllowed=true ("${a.advantageKey}")`,
+          { advantageKey: a.advantageKey },
+        );
+      }
       resolved.push({
         planId,
         advantageId: advantage.id,

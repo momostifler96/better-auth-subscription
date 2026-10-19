@@ -72,7 +72,7 @@ export const subscriptionSchema = z.object({
   id: z.string(),
   userId: z.string(),
   planId: z.string(),
-  status: z.enum(["active", "canceled", "paused", "trialing"]),
+  status: z.enum(["active", "canceled", "paused", "trialing", "past_due", "pending_approval"]),
   externalSubscriptionId: z.string().nullable(),
   currentPeriodStart: z.date(),
   currentPeriodEnd: z.date(),
@@ -193,7 +193,7 @@ export const auditLogSchema = z.object({
 // ---- Request body schemas ----
 
 export const createAdvantageBodySchema = z.object({
-  key: z.string().describe("Unique advantage key"),
+  key: z.string().min(1).max(100).regex(/^[a-z0-9][a-z0-9_-]*$/, "key doit être un slug (a-z, 0-9, _, -)").describe("Unique advantage key"),
   name: z.string().describe("Human-readable name"),
   description: z.string().optional().describe("Optional description"),
   valueType: z.enum(["boolean", "quantity"]).describe("Type of advantage value"),
@@ -209,7 +209,7 @@ export const updateAdvantageBodySchema = z.object({
 export  const updateAdvantageSucessResponseSchema = z.object({ advantage: advantageSchema })
 
 export const createPlanBodySchema = z.object({
-  slug: z.string().describe("URL-friendly plan identifier"),
+  slug: z.string().min(1).max(100).regex(/^[a-z0-9][a-z0-9_-]*$/, "slug doit être un slug (a-z, 0-9, _, -)").describe("URL-friendly plan identifier"),
   name: z.string().describe("Human-readable plan name"),
   description: z.string().optional().describe("Plan description"),
   kind: z.enum(["standard", "custom", "partner"]).optional().describe("Plan type"),
@@ -223,18 +223,38 @@ export const updatePlanBodySchema = z.object({
   name: z.string().describe("Human-readable plan name"),
   description: z.string().optional().describe("Plan description"),
   isPublic: z.boolean().optional().describe("Whether plan is publicly visible"),
+  isActive: z.boolean().optional().describe("Whether the plan can be subscribed to"),
   prices: z.array(planPriceSchema).optional().describe("Pricing for different providers/intervals"),
   advantages: z.array(advantageSelectionSchema).optional().describe("Advantages included in this plan"),
 });
 
+const manualProofUrlSchema = z
+  .string()
+  .max(3_000_000)
+  .refine(
+    (value) =>
+      value.startsWith("https://") ||
+      /^data:(image\/(png|jpe?g|webp|gif)|application\/pdf);base64,/.test(value),
+    { message: "manualProofUrl doit être une URL https ou un data URL image/PDF" },
+  );
+
+const manualMetadataSchema = z
+  .record(z.string().min(1).max(64), z.string().max(1000))
+  .refine(
+    (value) =>
+      Object.keys(value).length <= 20 &&
+      !Object.keys(value).some((key) => ["__proto__", "constructor", "prototype"].includes(key)),
+    { message: "manualMetadata doit contenir au plus 20 clés simples" },
+  );
+
 export const subscribeBodySchema = z.object({
   planId: z.string().describe("Plan ID to subscribe to"),
   provider: z.string().optional().describe("Payment provider (e.g., 'stripe', 'manual')"),
-  promoCode: z.string().optional().describe("Promo code to apply"),
-  quantity: z.number().int().positive().optional().describe("Quantity multiplier for the plan"),
+  promoCode: z.string().max(64).optional().describe("Promo code to apply"),
+  quantity: z.number().int().positive().max(1_000_000).optional().describe("Quantity multiplier for the plan"),
   // Manual provider only: proof of payment (file as base64 or URL) and optional metadata
-  manualProofUrl: z.string().optional().describe("Proof of payment (base64 data URL or external URL) - required for 'manual' provider"),
-  manualMetadata: z.record(z.string(), z.any()).optional().describe("Optional metadata for manual subscription (developer configurable)"),
+  manualProofUrl: manualProofUrlSchema.optional().describe("Proof of payment (base64 data URL or https URL) - required for 'manual' provider"),
+  manualMetadata: manualMetadataSchema.optional().describe("Optional metadata for manual subscription (flat string map)"),
 });
 
 export const changePlanBodySchema = z.object({
@@ -274,7 +294,7 @@ export const validatePromoCodeBodySchema = z.object({
 });
 
 export const createPromoCodeBodySchema = z.object({
-  code: z.string().describe("Promo code (will be uppercase)"),
+  code: z.string().min(2).max(64).describe("Promo code (will be uppercase)"),
   type: z.enum(["percent", "fixed", "free_period", "trial_extension"]).describe("Discount type"),
   value: z.number().positive().describe("Discount value"),
   currency: z.string().optional().describe("Currency for amount discounts"),
@@ -288,7 +308,7 @@ export const createPromoCodeBodySchema = z.object({
 });
 
 export const createPartnerBodySchema = z.object({
-  slug: z.string().describe("URL-friendly partner identifier"),
+  slug: z.string().min(1).max(100).regex(/^[a-z0-9][a-z0-9_-]*$/, "slug doit être un slug (a-z, 0-9, _, -)").describe("URL-friendly partner identifier"),
   name: z.string().describe("Partner name"),
   billingMode: z.enum(["free", "paid"]).describe("Billing mode for partner"),
   discountPercent: z.number().min(0).max(100).optional().describe("Discount percentage"),
@@ -300,13 +320,21 @@ export const createPartnerBodySchema = z.object({
 export const recordUsageBodySchema = z.object({
   subscriptionId: z.string().describe("Subscription ID"),
   advantageKey: z.string().describe("Advantage key"),
-  quantity: z.number().int().nonnegative().describe("Quantity used"),
+  quantity: z.number().int().nonnegative().max(1_000_000_000).describe("Quantity used"),
 });
 
 export const authorizeOverageBodySchema = z.object({
   subscriptionId: z.string().describe("Subscription ID"),
   advantageKey: z.string().describe("Advantage key"),
-  authorizedExtraLimit: z.number().nullable().describe("Authorized extra limit (null for unlimited)"),
-  reason: z.string().min(3).describe("Reason for authorization"),
+  authorizedExtraLimit: z.number().max(1_000_000_000).nullable().describe("Authorized extra limit (null for unlimited)"),
+  reason: z.string().min(3).max(1000).describe("Reason for authorization"),
   expiresAt: z.coerce.date().optional().describe("Expiration date for authorization"),
 });
+
+export const approveSubscriptionBodySchema = z
+  .object({ reviewNotes: z.string().max(2000).optional() })
+  .optional();
+
+export const rejectSubscriptionBodySchema = z
+  .object({ reason: z.string().max(2000).optional() })
+  .optional();

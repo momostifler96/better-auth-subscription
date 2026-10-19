@@ -39,7 +39,7 @@ export interface PlanRepository {
   update(id: string, patch: Partial<Plan>): Promise<Plan>;
   findById(id: string): Promise<Plan | null>;
   findBySlug(slug: string): Promise<Plan | null>;
-  list(filter?: { kind?: Plan["kind"]; partnerId?: string; isPublic?: boolean }): Promise<Plan[]>;
+  list(filter?: { kind?: Plan["kind"]; partnerId?: string; isPublic?: boolean; isActive?: boolean }): Promise<Plan[]>;
 }
 
 export interface PlanAdvantageRepository {
@@ -54,7 +54,9 @@ export interface SubscriptionRepository {
   findById(id: string): Promise<Subscription | null>;
   findByExternalId(externalSubscriptionId: string): Promise<Subscription | null>;
   findActiveForUser(userId: string): Promise<Subscription | null>;
+  findLatestForUser(userId: string): Promise<Subscription | null>;
   listForUser(userId: string): Promise<Subscription[]>;
+  listPending(): Promise<Subscription[]>;
 }
 
 export interface CustomSubscriptionRequestRepository {

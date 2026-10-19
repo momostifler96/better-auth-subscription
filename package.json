@@ -5,26 +5,99 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client/index.d.ts",
+      "import": "./dist/client/index.js"
+    },
+    "./client/react": {
+      "types": "./dist/client/react.d.ts",
+      "import": "./dist/client/react.js"
+    },
+    "./client/vue": {
+      "types": "./dist/client/vue/index.d.ts",
+      "import": "./dist/client/vue/index.js"
+    },
+    "./client/svelte": {
+      "types": "./dist/client/svelte/index.d.ts",
+      "import": "./dist/client/svelte/index.js"
+    },
+    "./client/types": {
+      "types": "./dist/client/types.d.ts",
+      "import": "./dist/client/types.js"
+    },
+    "./types": {
+      "types": "./dist/types/domain.d.ts",
+      "import": "./dist/types/domain.js"
+    },
+    "./providers/*": {
+      "types": "./dist/providers/*.d.ts",
+      "import": "./dist/providers/*.js"
+    },
+    "./schema/drizzle": {
+      "types": "./dist/schema/drizzle.d.ts",
+      "import": "./dist/schema/drizzle.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CLIENT_GUIDE.md",
+    "CLIENTS.md",
+    "INTEGRATION_GUIDE.md",
+    "TYPES_GUIDE.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "npm run build:server && npm run build:client",
+    "build:server": "tsc -p tsconfig.build.json",
+    "build:client": "tsc -p tsconfig.client.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "demo": "tsx scripts/demo.ts"
   },
   "peerDependencies": {
-    "better-auth": "^1.2.0"
+    "better-auth": "^1.7.0",
+    "drizzle-orm": "^0.45.2",
+    "react": "^19.0.0",
+    "svelte": "^5.0.0",
+    "vue": "^3.5.0"
+  },
+  "peerDependenciesMeta": {
+    "drizzle-orm": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "svelte": {
+      "optional": true
+    },
+    "vue": {
+      "optional": true
+    }
   },
   "dependencies": {
-    "react": "^19.2.8",
-    "vue": "^3.5.41",
-    "zod": "^3.23.8",
-    "zod-to-json-schema": "^3.25.2"
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
-    "better-auth": "^1.2.0",
+    "better-auth": "^1.7.0",
+    "drizzle-orm": "^0.45.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "svelte": "^5.0.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vue": "^3.5.0"
   }
 }

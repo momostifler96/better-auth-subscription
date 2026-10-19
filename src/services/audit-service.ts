@@ -59,6 +59,9 @@ export class AuditService {
       await this.record(ctx, { ...input, after: result });
       return result;
     } catch (error) {
+      if (process.env.DEBUG_AUDIT === "1") {
+        console.error("[audit.wrap]", input.action, error);
+      }
       await this.record(ctx, {
         ...input,
         after: undefined,

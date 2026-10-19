@@ -18,6 +18,12 @@ export interface SubscriptionsPluginOptions {
   isAdmin?: (user: Record<string, unknown> & { id: string }) => boolean;
   /** Indique si le plugin organization de Better Auth est activé. Ajoute le support des abonnements au niveau organisation. */
   enableOrganizations?: boolean;
+  /**
+   * Exige une approbation admin pour les souscriptions payantes via le
+   * provider `manual` (virement, facture...). Activé par défaut : une preuve
+   * de paiement déclarative ne suffit pas à obtenir les avantages.
+   */
+  requireManualApproval?: boolean;
 }
 
 export interface SubscriptionServices {
@@ -43,7 +49,9 @@ export function createSubscriptionServices(options: SubscriptionsPluginOptions):
   const plans = new PlanService(store, audit);
   const promos = new PromoService(store, audit);
   const partners = new PartnerService(store, audit, plans);
-  const subscriptions = new SubscriptionService(store, audit, options.providers, plans, promos);
+  const subscriptions = new SubscriptionService(store, audit, options.providers, plans, promos, {
+    requireManualApproval: options.requireManualApproval ?? true,
+  });
   const overage = new OverageService(store, audit, plans, options.providers);
   return { store, audit, plans, promos, partners, subscriptions, overage };
 }
@@ -54,14 +62,17 @@ export function createSubscriptionServices(options: SubscriptionsPluginOptions):
  */
 export function createSubscriptionServicesWithAdapter(
   adapter: any,
-  providers: PaymentProviderRegistry
+  providers: PaymentProviderRegistry,
+  options: { requireManualApproval?: boolean } = {},
 ): SubscriptionServices {
   const store = createAdapterStore(adapter);
   const audit = new AuditService(store.auditLogs);
   const plans = new PlanService(store, audit);
   const promos = new PromoService(store, audit);
   const partners = new PartnerService(store, audit, plans);
-  const subscriptions = new SubscriptionService(store, audit, providers, plans, promos);
+  const subscriptions = new SubscriptionService(store, audit, providers, plans, promos, {
+    requireManualApproval: options.requireManualApproval ?? true,
+  });
   const overage = new OverageService(store, audit, plans, providers);
   return { store, audit, plans, promos, partners, subscriptions, overage };
 }

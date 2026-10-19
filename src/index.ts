@@ -5,8 +5,9 @@ export * from "./types/domain.js";
 export * from "./repositories/interfaces.js";
 export { createMemoryStore } from "./repositories/memory/store.js";
 
-// Schéma Drizzle de référence (Postgres)
-export * as drizzleSchema from "./schema/drizzle.js";
+// Schéma Drizzle de référence (Postgres) — importer explicitement
+// `better-subscriptions/schema/drizzle` pour éviter de dépendre de drizzle-orm
+// lors d'un simple import du plugin côté serveur.
 
 // Providers de paiement
 export * from "./providers/types.js";
@@ -31,4 +32,10 @@ export {
 export { OverageService, type RecordUsageInput, type AuthorizeOverageInput, type UsageCheckResult } from "./services/overage-service.js";
 
 // Plugin Better Auth
-export { subscriptionsPlugin, createSubscriptionServices, type SubscriptionServices, type SubscriptionsPluginOptions } from "./plugin/index.js";
+export {
+  subscriptionsPlugin,
+  createSubscriptionServices,
+  createSubscriptionServicesWithAdapter,
+  type SubscriptionServices,
+  type SubscriptionsPluginOptions,
+} from "./plugin/index.js";
