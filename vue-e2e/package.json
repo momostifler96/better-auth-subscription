@@ -1,0 +1,27 @@
+{
+  "name": "better-subscriptions-vue-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Petite application Vue 3 pour tester le plugin better-subscriptions via son client publié",
+  "scripts": {
+    "build": "vite build",
+    "start": "tsx server/index.ts",
+    "serve": "npm run build && npm run start",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:client": "vite"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.0",
+    "better-auth": "^1.7.0",
+    "better-subscriptions": "file:..",
+    "hono": "^4.7.0",
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@vitejs/plugin-vue": "^5.2.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.5"
+  }
+}

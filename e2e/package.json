@@ -1,0 +1,29 @@
+{
+  "name": "better-subscriptions-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Application de test E2E navigateur pour le plugin better-subscriptions",
+  "scripts": {
+    "build": "vite build",
+    "start": "tsx server/index.ts",
+    "serve": "npm run build && npm run start",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:client": "vite",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.0",
+    "hono": "^4.7.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.5"
+  }
+}
